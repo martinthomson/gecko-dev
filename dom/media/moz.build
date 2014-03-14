@@ -28,11 +28,15 @@ EXPORTS.mozilla.dom += [
 
 EXPORTS.mozilla += [
     'MediaManager.h',
+    'PeerIdentityPrincipal.h',
+    'PeerIdentityUri.h',
 ]
 
 UNIFIED_SOURCES += [
     'GetUserMediaRequest.cpp',
     'MediaManager.cpp',
+    'PeerIdentityPrincipal.cpp',
+    'PeerIdentityUri.cpp',
 ]
 
 EXTRA_COMPONENTS += [
