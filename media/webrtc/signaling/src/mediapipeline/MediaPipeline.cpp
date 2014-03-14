@@ -653,6 +653,23 @@ nsresult MediaPipelineTransmit::Init() {
   return MediaPipeline::Init();
 }
 
+#ifdef MOZILLA_INTERNAL_API
+void MediaPipelineTransmit::UpdateSinkPrincipal_m(nsIPrincipal* principal) {
+  ASSERT_ON_THREAD(main_thread_);
+  bool enableStream;
+
+  nsresult rv = principal->Subsumes(domstream_->GetPrincipal(), &enableStream);
+  if (NS_FAILED(rv)) {
+    enableStream = false;
+    MOZ_MTLOG(ML_NOTICE, "Unable to subsume with "
+              << static_cast<void*>(principal) << " over "
+              << static_cast<void*>(domstream_->GetPrincipal()));
+  }
+
+  listener_->SetEnabled(enableStream);
+}
+#endif
+
 nsresult MediaPipelineTransmit::TransportReady_s(TransportInfo &info) {
   ASSERT_ON_THREAD(sts_thread_);
   // Call base ready function.
@@ -661,7 +678,6 @@ nsresult MediaPipelineTransmit::TransportReady_s(TransportInfo &info) {
   // Should not be set for a transmitter
   MOZ_ASSERT(!possible_bundle_rtp_);
   if (&info == &rtp_) {
-    // TODO(ekr@rtfm.com): Move onto MSG thread.
     listener_->SetActive(true);
   }
 
@@ -935,6 +951,7 @@ NewData(MediaStreamGraph* graph, TrackID tid,
       // Ignore data in case we have a muxed stream
       return;
     }
+
     AudioSegment* audio = const_cast<AudioSegment *>(
         static_cast<const AudioSegment *>(&media));
 
@@ -950,6 +967,7 @@ NewData(MediaStreamGraph* graph, TrackID tid,
       // Ignore data in case we have a muxed stream
       return;
     }
+
     VideoSegment* video = const_cast<VideoSegment *>(
         static_cast<const VideoSegment *>(&media));
 
@@ -972,7 +990,7 @@ void MediaPipelineTransmit::PipelineListener::ProcessAudioChunk(
   // TODO(ekr@rtfm.com): Do more than one channel
   nsAutoArrayPtr<int16_t> samples(new int16_t[chunk.mDuration]);
 
-  if (chunk.mBuffer) {
+  if (enabled_ && chunk.mBuffer) {
     switch (chunk.mBufferFormat) {
       case AUDIO_FORMAT_FLOAT32:
         {
@@ -1080,7 +1098,7 @@ void MediaPipelineTransmit::PipelineListener::ProcessVideoChunk(
     return;
   }
 
-  if (chunk.mFrame.GetForceBlack()) {
+  if (!enabled_ || chunk.mFrame.GetForceBlack()) {
     uint32_t yPlaneLen = size.width*size.height;
     uint32_t cbcrPlaneLen = yPlaneLen/2;
     uint32_t length = yPlaneLen + cbcrPlaneLen;
