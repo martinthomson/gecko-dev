@@ -34,6 +34,7 @@ dictionary MediaStreamConstraints {
     (boolean or object) video = false; // (boolean or MediaTrackConstraints)
     boolean picture = false;
     boolean fake = false;
+    DOMString? peerIdentity = null;
 };
 
 // Internal dictionary to process the raw objects in (boolean or object)
@@ -47,6 +48,7 @@ dictionary MediaStreamConstraintsInternal {
     boolean fake = false;
     MediaTrackConstraintsInternal audiom;
     MediaTrackConstraintsInternal videom;
+    DOMString? peerIdentity = null;
 };
 
 dictionary MediaTrackConstraints {

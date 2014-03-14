@@ -121,6 +121,7 @@ interface mozRTCPeerConnection : EventTarget  {
   sequence<MediaStream> getLocalStreams ();
   sequence<MediaStream> getRemoteStreams ();
   MediaStream? getStreamById (DOMString streamId);
+  [Throws]
   void addStream (MediaStream stream, optional MediaConstraints constraints);
   void removeStream (MediaStream stream);
   void close ();
