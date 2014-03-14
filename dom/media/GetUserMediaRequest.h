@@ -34,7 +34,7 @@ public:
 
   uint64_t WindowID();
   uint64_t InnerWindowID();
-  void GetCallID(nsString& retval);
+  void GetCallID(nsAString& retval);
   void GetConstraints(MediaStreamConstraintsInternal &result);
 
 private:

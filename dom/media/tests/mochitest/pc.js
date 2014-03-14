@@ -1070,6 +1070,7 @@ function PeerConnectionWrapper(label, configuration) {
   this.dataChannels = [ ];
 
   info("Creating " + this);
+  info("Configuration: " + JSON.stringify(this.configuration));
   this._pc = new mozRTCPeerConnection(this.configuration);
   is(this._pc.iceConnectionState, "new", "iceConnectionState starts at 'new'");
 

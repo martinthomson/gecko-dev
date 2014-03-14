@@ -26,6 +26,7 @@ var test;
 function theTest() {
   test = new PeerConnectionTest();
   test.setMediaConstraints([{audio: true}], [{audio: true}]);
+  test.chain.removeAfter('PC_REMOTE_CHECK_INITIAL_SIGNALINGSTATE');
   test.chain.append([
   [
     "GET_IDENTITY_ASSERTION_FAILS_WITHOUT_PROVIDER",
@@ -52,8 +53,12 @@ function theTest() {
           test.next();
         }
       };
-      test.pcLocal._pc.getIdentityAssertion();
-      test.pcLocal._pc.getIdentityAssertion();
+      function abort(e) {
+        ok(false, "error handler called");
+        test.next();
+      }
+      test.pcLocal._pc.getIdentityAssertion(abort);
+      test.pcLocal._pc.getIdentityAssertion(abort);
     }
   ],
   [

@@ -44,7 +44,7 @@ nsISupports* GetUserMediaRequest::GetParentObject()
   return nullptr;
 }
 
-void GetUserMediaRequest::GetCallID(nsString& retval)
+void GetUserMediaRequest::GetCallID(nsAString& retval)
 {
   retval = mCallID;
 }

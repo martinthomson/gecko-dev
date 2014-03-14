@@ -36,6 +36,9 @@
 #include "nsDOMFile.h"
 #include "nsGlobalWindow.h"
 
+#include "mozilla/Preferences.h"
+#include "mozilla/PeerIdentityPrincipal.h"
+
 /* Using WebRTC backend on Desktops (Mac, Windows, Linux), otherwise default */
 #include "MediaEngineDefault.h"
 #if defined(MOZ_WEBRTC)
@@ -85,7 +88,7 @@ using dom::Sequence;
 
 static nsresult CompareDictionaries(JSContext* aCx, JSObject *aA,
                                     const MediaTrackConstraintSet &aB,
-                                    nsString *aDifference)
+                                    nsAString &aDifference)
 {
   JS::Rooted<JSObject*> a(aCx, aA);
   JSAutoCompartment ac(aCx, aA);
@@ -112,11 +115,11 @@ static nsresult CompareDictionaries(JSContext* aCx, JSObject *aA,
 
       JS::Rooted<JSString*> namestr(aCx, JS::ToString(aCx, nameval));
       NS_ENSURE_TRUE(namestr, NS_ERROR_UNEXPECTED);
-      aDifference->Assign(JS_GetStringCharsZ(aCx, namestr));
+      aDifference.Assign(JS_GetStringCharsZ(aCx, namestr));
       return NS_OK;
     }
   }
-  aDifference->Truncate();
+  aDifference.Truncate();
   return NS_OK;
 }
 
@@ -126,7 +129,7 @@ static nsresult CompareDictionaries(JSContext* aCx, JSObject *aA,
 static nsresult ValidateTrackConstraints(
     JSContext *aCx, JSObject *aRaw,
     const MediaTrackConstraintsInternal &aNormalized,
-    nsString *aOutUnknownConstraint)
+    nsAString &aOutUnknownConstraint)
 {
   // First find raw mMandatory member (use MediaTrackConstraints as helper)
   JS::Rooted<JS::Value> rawval(aCx, JS::ObjectValue(*aRaw));
@@ -166,15 +169,15 @@ ErrorCallbackRunnable::Run()
   // Only run if the window is still active.
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
 
-  nsCOMPtr<nsIDOMGetUserMediaSuccessCallback> success = mSuccess.forget();
-  nsCOMPtr<nsIDOMGetUserMediaErrorCallback> error = mError.forget();
+  nsCOMPtr<nsIDOMGetUserMediaSuccessCallback> successCb = mSuccess.forget();
+  nsCOMPtr<nsIDOMGetUserMediaErrorCallback> errorCb = mError.forget();
 
   if (!(mManager->IsWindowStillActive(mWindowID))) {
     return NS_OK;
   }
   // This is safe since we're on main-thread, and the windowlist can only
   // be invalidated from the main-thread (see OnNavigation)
-  error->OnError(mErrorMsg);
+  errorCb->OnError(mErrorMsg);
   return NS_OK;
 }
 
@@ -483,11 +486,13 @@ public:
     uint64_t aWindowID,
     GetUserMediaCallbackMediaStreamListener* aListener,
     MediaEngineSource* aAudioSource,
-    MediaEngineSource* aVideoSource)
+    MediaEngineSource* aVideoSource,
+    const nsAString &aPeerIdentity)
     : mAudioSource(aAudioSource)
     , mVideoSource(aVideoSource)
     , mWindowID(aWindowID)
     , mListener(aListener)
+    , mPeerIdentity(aPeerIdentity)
     , mManager(MediaManager::GetInstance())
   {
     mSuccess.swap(aSuccess);
@@ -580,9 +585,14 @@ public:
                reinterpret_cast<uint64_t>(stream.get()),
                reinterpret_cast<int64_t>(trackunion->GetStream()));
 
-    trackunion->CombineWithPrincipal(window->GetExtantDoc()->NodePrincipal());
+    nsIPrincipal *principal = window->GetExtantDoc()->NodePrincipal();
+    if (!mPeerIdentity.IsVoid()) {
+      principal =
+        new PeerIdentityPrincipal(mPeerIdentity, principal);
+    }
+    trackunion->CombineWithPrincipal(principal);
 
-    // The listener was added at the begining in an inactive state.
+    // The listener was added at the beginning in an inactive state.
     // Activate our listener. We'll call Start() on the source when get a callback
     // that the MediaStream has started consuming. The listener is freed
     // when the page is invalidated (on navigation or close).
@@ -643,6 +653,7 @@ private:
   nsRefPtr<MediaEngineSource> mVideoSource;
   uint64_t mWindowID;
   nsRefPtr<GetUserMediaCallbackMediaStreamListener> mListener;
+  nsString mPeerIdentity;
   nsRefPtr<MediaManager> mManager; // get ref to this when creating the runnable
 };
 
@@ -989,7 +1000,8 @@ public:
     }
 
     NS_DispatchToMainThread(new GetUserMediaStreamRunnable(
-      mSuccess, mError, mWindowID, mListener, aAudioSource, aVideoSource
+      mSuccess, mError, mWindowID, mListener, aAudioSource, aVideoSource,
+        mConstraints.mPeerIdentity
     ));
 
     MOZ_ASSERT(!mSuccess);
@@ -1222,8 +1234,8 @@ MediaManager::NotifyRecordingStatusChange(nsPIDOMWindow* aWindow,
   props->SetPropertyAsAString(NS_LITERAL_STRING("requestURL"), requestURL);
 
   obs->NotifyObservers(static_cast<nsIPropertyBag2*>(props),
-		       "recording-device-events",
-		       aMsg.get());
+                       "recording-device-events",
+                       aMsg.get());
 
   // Forward recording events to parent process.
   // The events are gathered in chrome process and used for recording indicator
@@ -1284,7 +1296,7 @@ MediaManager::GetUserMedia(JSContext* aCx, bool aPrivileged,
     NS_ENSURE_TRUE(success, NS_ERROR_FAILURE);
 
     rv = ValidateTrackConstraints(aCx, aRawConstraints.mAudio.GetAsObject(),
-                                  c.mAudiom, &unknownConstraintFound);
+                                  c.mAudiom, unknownConstraintFound);
     NS_ENSURE_SUCCESS(rv, rv);
     c.mAudio = true;
   } else {
@@ -1297,7 +1309,7 @@ MediaManager::GetUserMedia(JSContext* aCx, bool aPrivileged,
     NS_ENSURE_TRUE(success, NS_ERROR_FAILURE);
 
     rv = ValidateTrackConstraints(aCx, aRawConstraints.mVideo.GetAsObject(),
-                                  c.mVideom, &unknownConstraintFound);
+                                  c.mVideom, unknownConstraintFound);
     NS_ENSURE_SUCCESS(rv, rv);
     c.mVideo = true;
   } else {
@@ -1305,6 +1317,7 @@ MediaManager::GetUserMedia(JSContext* aCx, bool aPrivileged,
   }
   c.mPicture = aRawConstraints.mPicture;
   c.mFake = aRawConstraints.mFake;
+  c.mPeerIdentity = aRawConstraints.mPeerIdentity;
 
   /**
    * If we were asked to get a picture, before getting a snapshot, we check if
@@ -1629,8 +1642,7 @@ MediaManager::RemoveFromWindowList(uint64_t aWindowID,
         // Notify the UI that this window no longer has gUM active
         char windowBuffer[32];
         PR_snprintf(windowBuffer, sizeof(windowBuffer), "%llu", outerID);
-        nsAutoString data;
-        data.Append(NS_ConvertUTF8toUTF16(windowBuffer));
+        nsString data = NS_ConvertUTF8toUTF16(windowBuffer);
 
         nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
         obs->NotifyObservers(nullptr, "recording-window-ended", data.get());

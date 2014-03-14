@@ -306,11 +306,7 @@ PeerConnectionIdp.prototype = {
    * Packages a message and sends it to the IdP.
    */
   _sendToIdp: function(request, callback) {
-    // this is not secure
-    // but there are no good alternatives until bug 968335 lands
-    // when that happens, change this to use the new mechanism
-    request.origin = this._win.document.nodePrincipal.origin;
-
+    request.origin = Cu.getWebIDLCallerPrincipal().origin;
     this._idpchannel.send(request, this._wrapCallback(callback));
   },
 
@@ -333,6 +329,7 @@ PeerConnectionIdp.prototype = {
       }
       this._win.clearTimeout(timeout);
       timeout = null;
+
       var content = null;
       if (message.type === "SUCCESS") {
         content = message.message;

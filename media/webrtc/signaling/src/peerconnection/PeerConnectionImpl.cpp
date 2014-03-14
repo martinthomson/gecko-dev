@@ -62,6 +62,9 @@
 #include "nsNetUtil.h"
 #include "nsIDOMDataChannel.h"
 #include "nsIDOMLocation.h"
+#include "nsIPrincipal.h"
+#include "nsIScriptSecurityManager.h"
+#include "mozilla/PeerIdentityPrincipal.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
 #include "mozilla/dom/RTCPeerConnectionBinding.h"
@@ -476,6 +479,7 @@ PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
   , mSignalingState(PCImplSignalingState::SignalingStable)
   , mIceConnectionState(PCImplIceConnectionState::New)
   , mIceGatheringState(PCImplIceGatheringState::New)
+  , mDtlsConnected(false)
   , mWindow(nullptr)
   , mIdentity(nullptr)
   , mSTSThread(nullptr)
@@ -543,18 +547,32 @@ PeerConnectionImpl::~PeerConnectionImpl()
 }
 
 already_AddRefed<DOMMediaStream>
-PeerConnectionImpl::MakeMediaStream(nsPIDOMWindow* aWindow,
-                                    uint32_t aHint)
+PeerConnectionImpl::MakeMediaStream(uint32_t aHint)
 {
   nsRefPtr<DOMMediaStream> stream =
-    DOMMediaStream::CreateSourceStream(aWindow, aHint);
+    DOMMediaStream::CreateSourceStream(GetWindow(), aHint);
+
 #ifdef MOZILLA_INTERNAL_API
-  nsIDocument* doc = aWindow->GetExtantDoc();
-  if (!doc) {
-    return nullptr;
+  nsCOMPtr<nsIPrincipal> systemPrincipal;
+  nsCOMPtr<nsIScriptSecurityManager> securityManager =
+    do_GetService(NS_SCRIPTSECURITYMANAGER_CONTRACTID);
+  securityManager->GetSystemPrincipal(getter_AddRefs(systemPrincipal));
+  // start with the system principal
+  stream->CombineWithPrincipal(systemPrincipal);
+
+  // Make the stream data (audio/video samples) accessible to the receiving page,
+  // or bind it to the peer identity, if that is enabled.
+  if (PrivacyRequested()) {
+    if (!mPeerIdentity.IsVoid()) {
+      stream->CombineWithPrincipal(mPrincipal);
+    }
+  } else if (mDtlsConnected) {
+    nsIDocument* doc = GetWindow()->GetExtantDoc();
+    if (!doc) {
+      return nullptr;
+    }
+    stream->CombineWithPrincipal(doc->NodePrincipal());
   }
-  // Make the stream data (audio/video samples) accessible to the receiving page.
-  stream->CombineWithPrincipal(doc->NodePrincipal());
 #endif
 
   CSFLogDebug(logTag, "Created media stream %p, inner: %p", stream.get(), stream->GetStream());
@@ -573,7 +591,7 @@ PeerConnectionImpl::CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo
   // needs to actually propagate a hint for local streams.
   // TODO(ekr@rtfm.com): Clean up when we have explicit track lists.
   // See bug 834835.
-  nsRefPtr<DOMMediaStream> stream = MakeMediaStream(mWindow, 0);
+  nsRefPtr<DOMMediaStream> stream = MakeMediaStream(0);
   if (!stream) {
     return NS_ERROR_FAILURE;
   }
@@ -737,6 +755,15 @@ PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   mWindow = aWindow;
   NS_ENSURE_STATE(mWindow);
 
+  mPeerIdentity = aRTCConfiguration->mPeerIdentity;
+  mPrivacyRequested = !mPeerIdentity.IsVoid();   // null check
+  nsCOMPtr<nsPIDOMWindow> window(do_QueryInterface(mWindow));
+
+  mPrincipal = window->GetExtantDoc()->NodePrincipal();
+  if (PrivacyRequested()) {
+    mPrincipal =
+      new PeerIdentityPrincipal(mPeerIdentity, mPrincipal);
+  }
 #endif // MOZILLA_INTERNAL_API
 
   PRTime timestamp = PR_Now();
@@ -928,7 +955,7 @@ PeerConnectionImpl::CreateFakeMediaStream(uint32_t aHint, nsIDOMMediaStream** aR
     aHint &= ~MEDIA_STREAM_MUTE;
   }
 
-  nsRefPtr<DOMMediaStream> stream = MakeMediaStream(mWindow, aHint);
+  nsRefPtr<DOMMediaStream> stream = MakeMediaStream(aHint);
   if (!stream) {
     return NS_ERROR_FAILURE;
   }
@@ -1254,6 +1281,11 @@ PeerConnectionImpl::SetLocalDescription(int32_t aAction, const char* aSDP)
   mTimeCard = nullptr;
   STAMP_TIMECARD(tc, "Set Local Description");
 
+#ifdef MOZILLA_INTERNAL_API
+  nsIPrincipal* scriptPrincipal = GetWindow()->GetExtantDoc()->NodePrincipal();
+  mPrivacyRequested = mMedia->LocalStreamsIsolated(scriptPrincipal);
+#endif
+
   mLocalRequestedSDP = aSDP;
   mInternal->mCall->setLocalDescription((cc_jsep_action_t)aAction,
                                         mLocalRequestedSDP, tc);
@@ -1373,16 +1405,66 @@ PeerConnectionImpl::CloseStreams() {
   return NS_OK;
 }
 
-NS_IMETHODIMP
+nsresult
+PeerConnectionImpl::SetPeerIdentity(const nsAString& peerIdentity)
+{
+  PC_AUTO_ENTER_API_CALL(true);
+
+  // once set, this can't be changed
+  if (!mPeerIdentity.IsVoid()) {
+    if (mPeerIdentity != peerIdentity) {
+      return NS_ERROR_FAILURE;
+    }
+  } else {
+    mPeerIdentity = peerIdentity;
+#ifdef MOZILLA_INTERNAL_API
+    mPrincipal = new PeerIdentityPrincipal(mPeerIdentity, mPrincipal);
+    mMedia->UpdateSinkPrincipal_m(mPrincipal);
+#endif
+  }
+  return NS_OK;
+}
+
+void
+PeerConnectionImpl::SetDtlsConnected(bool aPrivacyRequested)
+{
+  PC_AUTO_ENTER_API_CALL_NO_CHECK();
+
+  // For this, as with mPrivacyRequested, once we've connected to a peer, we
+  // fixate on that peer.  Dealing with multiple peers or connections is more
+  // than this run-down wreck of an object can handle.
+  // Besides, this is only used to say if we have been connected ever.
+  mDtlsConnected = true;
+#ifdef MOZILLA_INTERNAL_API
+  if (!PrivacyRequested()) {
+    if (aPrivacyRequested && !mPeerIdentity.IsVoid()) {
+      // if we previously didn't know, time to update stream principals
+      mMedia->UpdateRemoteStreamPrincipals_m(mPrincipal);
+    }
+  } else {
+    // now we know that privacy isn't needed for sure
+    nsIDocument* doc = GetWindow()->GetExtantDoc();
+    if (doc) {
+      mMedia->UpdateRemoteStreamPrincipals_m(doc->NodePrincipal());
+    } else {
+      CSFLogInfo(logTag, "Can't update principal on streams; window gone");
+    }
+  }
+#endif
+  mPrivacyRequested = mPrivacyRequested || aPrivacyRequested;
+}
+
+nsresult
 PeerConnectionImpl::AddStream(DOMMediaStream &aMediaStream,
                               const MediaConstraintsInternal& aConstraints)
 {
   return AddStream(aMediaStream, MediaConstraintsExternal(aConstraints));
 }
 
-NS_IMETHODIMP
-PeerConnectionImpl::AddStream(DOMMediaStream& aMediaStream,
-                              const MediaConstraintsExternal& aConstraints) {
+nsresult
+PeerConnectionImpl::AddStream(DOMMediaStream &aMediaStream,
+                              const MediaConstraintsExternal& aConstraints)
+{
   PC_AUTO_ENTER_API_CALL(true);
 
   uint32_t hints = aMediaStream.GetHintContents();
@@ -1409,8 +1491,9 @@ PeerConnectionImpl::AddStream(DOMMediaStream& aMediaStream,
 
   uint32_t stream_id;
   nsresult res = mMedia->AddStream(&aMediaStream, &stream_id);
-  if (NS_FAILED(res))
+  if (NS_FAILED(res)) {
     return res;
+  }
 
   // TODO(ekr@rtfm.com): these integers should be the track IDs
   if (hints & DOMMediaStream::HINT_CONTENTS_AUDIO) {

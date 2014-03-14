@@ -36,6 +36,7 @@
 #include "VideoSegment.h"
 #include "nsNSSShutDown.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
+#include "nsIPrincipal.h"
 #endif
 
 namespace test {
@@ -225,8 +226,7 @@ public:
   static PeerConnectionImpl* CreatePeerConnection();
   static nsresult ConvertRTCConfiguration(const RTCConfiguration& aSrc,
                                           IceConfiguration *aDst);
-  static already_AddRefed<DOMMediaStream> MakeMediaStream(nsPIDOMWindow* aWindow,
-                                                          uint32_t aHint);
+  already_AddRefed<DOMMediaStream> MakeMediaStream(uint32_t aHint);
 
   nsresult CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo>* aInfo);
 
@@ -276,7 +276,7 @@ public:
     return mSTSThread;
   }
 
-  // Get the DTLS identity
+  // Get the DTLS identity (local side)
   mozilla::RefPtr<DtlsIdentity> const GetIdentity() const;
   std::string GetFingerprint() const;
   std::string GetFingerprintAlgorithm() const;
@@ -370,14 +370,26 @@ public:
     rv = AddStream(aMediaStream, aConstraints);
   }
 
-  NS_IMETHODIMP AddStream(DOMMediaStream & aMediaStream,
-                          const MediaConstraintsExternal& aConstraints);
+  nsresult AddStream(DOMMediaStream &aMediaStream,
+                     const MediaConstraintsExternal& aConstraints);
 
   NS_IMETHODIMP_TO_ERRORRESULT(RemoveStream, ErrorResult &rv,
                                DOMMediaStream& aMediaStream)
   {
     rv = RemoveStream(aMediaStream);
   }
+
+
+  nsresult GetPeerIdentity(nsAString& peerIdentity)
+  {
+    peerIdentity = mPeerIdentity;
+    return NS_OK;
+  }
+
+  nsresult SetPeerIdentity(const nsAString& peerIdentity);
+
+  // this method checks to see if we've made a promise to protect media.
+  bool PrivacyRequested() const { return mPrivacyRequested; }
 
   NS_IMETHODIMP GetFingerprint(char** fingerprint);
   void GetFingerprint(nsAString& fingerprint)
@@ -512,6 +524,8 @@ public:
   void SetSignalingState_m(mozilla::dom::PCImplSignalingState aSignalingState);
 
   bool IsClosed() const;
+  // called when DTLS connects; we only need this once
+  void SetDtlsConnected(bool aPrivacyRequested);
 
 #ifdef MOZILLA_INTERNAL_API
   // initialize telemetry for when calls start
@@ -522,6 +536,7 @@ public:
       RTCStatsQuery *query);
 
   static nsresult ExecuteStatsQuery_s(RTCStatsQuery *query);
+  nsIPrincipal *GetPrincipal() { return mPrincipal; }
 #endif
 
 private:
@@ -584,6 +599,8 @@ private:
       nsAutoPtr<RTCStatsQuery> query);
 #endif
 
+
+
   // Timecard used to measure processing time. This should be the first class
   // attribute so that we accurately measure the time required to instantiate
   // any other attributes of this class.
@@ -597,6 +614,10 @@ private:
   // ICE State
   mozilla::dom::PCImplIceConnectionState mIceConnectionState;
   mozilla::dom::PCImplIceGatheringState mIceGatheringState;
+
+  // DTLS
+  // this is true if we have been connected ever, see SetDtlsConnected
+  bool mDtlsConnected;
 
   nsCOMPtr<nsIThread> mThread;
   // TODO: Remove if we ever properly wire PeerConnection for cycle-collection.
@@ -615,8 +636,19 @@ private:
   std::string mFingerprint;
   std::string mRemoteFingerprint;
 
-  // The DTLS identity
+  // identity-related fields
   mozilla::RefPtr<DtlsIdentity> mIdentity;
+#ifdef MOZILLA_INTERNAL_API
+  nsCOMPtr<nsIPrincipal> mPrincipal;
+#endif
+  // The entity on the other end of the peer-to-peer connection;
+  // void if they are not yet identified, and no constraint has been set
+  nsString mPeerIdentity;
+  // Whether an app should be prevented from accessing media produced by the PC
+  // This can be false if mPeerIdentity is non-void, in the case where
+  // identity is provided, but the media is not protected from the app on
+  // either side
+  bool mPrivacyRequested;
 
   // A handle to refer to this PC with
   std::string mHandle;
@@ -632,7 +664,7 @@ private:
 
 #ifdef MOZILLA_INTERNAL_API
   // DataConnection that's used to get all the DataChannels
-	nsRefPtr<mozilla::DataChannelConnection> mDataConnection;
+  nsRefPtr<mozilla::DataChannelConnection> mDataConnection;
 #endif
 
   nsRefPtr<PeerConnectionMedia> mMedia;
