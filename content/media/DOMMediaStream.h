@@ -105,6 +105,18 @@ public:
   bool CombineWithPrincipal(nsIPrincipal* aPrincipal);
 
   /**
+   * Used to learn about dynamic changes in principal occur.
+   * Operations relating to these observers must be confined to the main thread.
+   */
+  class PrincipalChangeObserver
+  {
+  public:
+    virtual void PrincipalChanged(DOMMediaStream* aMediaStream) = 0;
+  };
+  bool AddPrincipalChangeObserver(PrincipalChangeObserver* aObserver);
+  bool RemovePrincipalChangeObserver(PrincipalChangeObserver* aObserver);
+
+  /**
    * Called when this stream's MediaStreamGraph has been shut down. Normally
    * MSGs are only shut down when all streams have been removed, so this
    * will only be called during a forced shutdown due to application exit.
@@ -198,9 +210,6 @@ protected:
   // MediaStream is owned by the graph, but we tell it when to die, and it won't
   // die until we let it.
   MediaStream* mStream;
-  // Principal identifying who may access the contents of this stream.
-  // If null, this stream can be used by anyone because it has no content yet.
-  nsCOMPtr<nsIPrincipal> mPrincipal;
 
   nsAutoTArray<nsRefPtr<MediaStreamTrack>,2> mTracks;
   nsRefPtr<StreamListener> mListener;
@@ -215,6 +224,12 @@ protected:
   // Indicate what track types have been added to this stream
   uint8_t mTrackTypesAvailable;
   bool mNotifiedOfMediaStreamGraphShutdown;
+
+private:
+  // Principal identifying who may access the contents of this stream.
+  // If null, this stream can be used by anyone because it has no content yet.
+  nsCOMPtr<nsIPrincipal> mPrincipal;
+  nsTArray<PrincipalChangeObserver*> mPrincipalChangeObservers;
 };
 
 class DOMLocalMediaStream : public DOMMediaStream,
