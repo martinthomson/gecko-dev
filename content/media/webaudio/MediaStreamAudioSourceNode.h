@@ -8,18 +8,17 @@
 #define MediaStreamAudioSourceNode_h_
 
 #include "AudioNode.h"
+#include "DOMMediaStream.h"
 
 namespace mozilla {
 
-class DOMMediaStream;
-
 namespace dom {
 
-class MediaStreamAudioSourceNode : public AudioNode
+class MediaStreamAudioSourceNode : public AudioNode,
+                                   public DOMMediaStream::PrincipalChangeObserver
 {
 public:
   MediaStreamAudioSourceNode(AudioContext* aContext, DOMMediaStream* aMediaStream);
-  // Define constructor out-of-line so we can forward-declare DOMMediaStream
   virtual ~MediaStreamAudioSourceNode();
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -30,6 +29,8 @@ public:
   virtual void DestroyMediaStream() MOZ_OVERRIDE;
 
   virtual uint16_t NumberOfInputs() const MOZ_OVERRIDE { return 0; }
+
+  virtual void PrincipalChanged(DOMMediaStream* aMediaStream) MOZ_OVERRIDE;
 
 private:
   nsRefPtr<MediaInputPort> mInputPort;

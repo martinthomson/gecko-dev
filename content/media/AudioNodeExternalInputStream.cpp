@@ -15,6 +15,7 @@ namespace mozilla {
 AudioNodeExternalInputStream::AudioNodeExternalInputStream(AudioNodeEngine* aEngine, TrackRate aSampleRate)
   : AudioNodeStream(aEngine, MediaStreamGraph::INTERNAL_STREAM, aSampleRate)
   , mCurrentOutputPosition(0)
+  , mEnabled(false)
 {
   MOZ_COUNT_CTOR(AudioNodeExternalInputStream);
 }
@@ -332,7 +333,7 @@ AudioNodeExternalInputStream::ProcessInput(GraphTime aFrom, GraphTime aTo,
 
   // GC stuff can result in our input stream being destroyed before this stream.
   // Handle that.
-  if (mInputs.IsEmpty()) {
+  if (!mEnabled || mInputs.IsEmpty()) {
     mLastChunks[0].SetNull(WEBAUDIO_BLOCK_SIZE);
     AdvanceOutputSegment();
     return;

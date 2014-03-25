@@ -8,6 +8,7 @@
 
 #include "MediaStreamGraph.h"
 #include "AudioNodeStream.h"
+#include "mozilla/Atomics.h"
 
 // Forward declaration for mResamplerMap
 typedef struct SpeexResamplerState_ SpeexResamplerState;
@@ -26,6 +27,8 @@ public:
   ~AudioNodeExternalInputStream();
 
   virtual void ProcessInput(GraphTime aFrom, GraphTime aTo, uint32_t aFlags) MOZ_OVERRIDE;
+
+  void SetEnabled(bool aEnabled) { mEnabled = aEnabled; }
 
 private:
   // For storing pointers and data about input tracks, like the last TrackTick which
@@ -94,6 +97,12 @@ private:
    */
   uint32_t GetTrackMapEntry(const StreamBuffer::Track& aTrack,
                             GraphTime aFrom);
+
+  /**
+   * Marks this as enabled or not.  Disabled nodes produce silence.  This node becomes disabled if
+   * the document principal does not subsume the DOMMediaStream principal.
+   */
+  Atomic<bool> mEnabled;
 };
 
 }

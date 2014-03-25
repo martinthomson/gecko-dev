@@ -8,7 +8,6 @@
 #include "mozilla/dom/MediaStreamAudioSourceNodeBinding.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeExternalInputStream.h"
-#include "DOMMediaStream.h"
 
 namespace mozilla {
 namespace dom {
@@ -43,10 +42,29 @@ MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* aContext,
   mInputPort = outputStream->AllocateInputPort(aMediaStream->GetStream(),
                                                MediaInputPort::FLAG_BLOCK_INPUT);
   mInputStream->AddConsumerToKeepAlive(this);
+
+  PrincipalChanged(mInputStream); // trigger enabling/disabling of the connector
+  mInputStream->AddPrincipalChangeObserver(this);
 }
 
 MediaStreamAudioSourceNode::~MediaStreamAudioSourceNode()
 {
+  mInputStream->RemovePrincipalChangeObserver(this);
+}
+
+void
+MediaStreamAudioSourceNode::PrincipalChanged(DOMMediaStream* ms)
+{
+  bool subsumes = false;
+  nsIDocument* doc = Context()->GetParentObject()->GetExtantDoc();
+  if (doc) {
+    nsIPrincipal* docPrincipal = doc->NodePrincipal();
+    nsIPrincipal* streamPrincipal = mInputStream->GetPrincipal();
+    if (NS_FAILED(docPrincipal->Subsumes(streamPrincipal, &subsumes))) {
+      subsumes = false;
+    }
+  }
+  static_cast<AudioNodeExternalInputStream*>(mStream.get())->SetEnabled(subsumes);
 }
 
 void
@@ -67,4 +85,3 @@ MediaStreamAudioSourceNode::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aSc
 
 }
 }
-
