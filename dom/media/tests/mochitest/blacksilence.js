@@ -34,7 +34,8 @@
     }, 50);
     return function cancel() {
       if (interval) {
-        ok(false, 'timed out waiting for audio check');
+        ok(false, type + ' (' + successMessage + ')' +
+           ' failed after waiting full duration');
         clearInterval(interval);
         done();
       }
@@ -56,8 +57,6 @@
       analyser.getByteTimeDomainData(view);
 
       var silent = check(constraintApplied, isSilence(view), 'be silence for audio');
-      // TODO: silence cross origin input to webaudio, bug 966066
-      silent ^= constraintApplied;
       return sampleCount > 0 && silent;
     }
     return periodicCheck('audio', testAudio,
@@ -92,12 +91,13 @@
         return false;
       }
 
-      ctx.drawImage(video, 0, 0);
       try {
-        ctx.getImageData(0, 0, 1, 1);
+       ctx.drawImage(video, 0, 0);
+       ctx.getImageData(0, 0, 1, 1);
         return check(constraintApplied, false, 'throw on getImageData for video');
       } catch (e) {
-        return check(constraintApplied, e.name === 'SecurityError', 'get a security error');
+        return check(constraintApplied, e.name === 'SecurityError',
+                     'get a security error: ' + e.name);
       }
     }
 
