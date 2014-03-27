@@ -48,6 +48,7 @@ JS_MODULES_PATH = 'modules/media'
 
 EXTRA_JS_MODULES += [
     'IdpProxy.jsm',
+    'IdpProxyChrome.jsm',
     'PeerConnectionIdp.jsm',
 ]
 
