@@ -13,85 +13,109 @@ const {
   results: Cr
 } = Components;
 
-Cu.import("resource://gre/modules/Services.jsm");
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "Sandbox",
-                                  "resource://gre/modules/identity/Sandbox.jsm");
-
 /**
- * An invisible iframe for hosting the idp shim.
+ * A proxy for the IdpWrapper in IdpChrome.jsm
  *
- * There is no visible UX here, as we assume the user has already
- * logged in elsewhere (on a different screen in the web site hosting
- * the RTC functions).
+ * Looks like the real thing, but everything is message-passing
  */
-function IdpChannel(uri, messageCallback) {
-  this.sandbox = null;
-  this.messagechannel = null;
-  this.source = uri;
-  this.messageCallback = messageCallback;
+function IdpChannel(id, url, sendMessage, onMessage, onFinalize) {
+  this._id = id;
+  this._url = url;
+  this._send = sendMessage;
+  this._message = onMessage;
+  this._finalizer = onFinalize;
 }
 
 IdpChannel.prototype = {
-  /**
-   * Create a hidden, sandboxed iframe for hosting the IdP's js shim.
-   *
-   * @param callback
-   *                (function) invoked when this completes, with an error
-   *                argument if there is a problem, no argument if everything is
-   *                ok
-   */
   open: function(callback) {
-    if (this.sandbox) {
-      return callback(new Error("IdP channel already open"));
-    }
-
-    let ready = this._sandboxReady.bind(this, callback);
-    this.sandbox = new Sandbox(this.source, ready);
+    this._ready = callback;
+    this._send(this._id, "CREATE", this._url);
   },
 
-  _sandboxReady: function(aCallback, aSandbox) {
-    // Inject a message channel into the subframe.
-    try {
-      this.messagechannel = new aSandbox._frame.contentWindow.MessageChannel();
-      Object.defineProperty(
-        aSandbox._frame.contentWindow.wrappedJSObject,
-        "rtcwebIdentityPort",
-        {
-          value: this.messagechannel.port2
-        }
-      );
-    } catch (e) {
-      this.close();
-      aCallback(e); // oops, the IdP proxy overwrote this.. bad
-      return;
-    }
-    this.messagechannel.port1.onmessage = function(msg) {
-      this.messageCallback(msg.data);
-    }.bind(this);
-    this.messagechannel.port1.start();
-    aCallback();
+  send: function(message) {
+    this._send(this._id, "MESSAGE", message);
   },
 
-  send: function(msg) {
-    this.messagechannel.port1.postMessage(msg);
+  close: function() {
+    this._send(this._id, "CLOSE");
   },
 
-  close: function IdpChannel_close() {
-    if (this.sandbox) {
-      if (this.messagechannel) {
-        this.messagechannel.port1.close();
-      }
-      this.sandbox.free();
+  MESSAGE: function(message) {
+    this._message(message);
+  },
+
+  CREATED: function(message) {
+    this._ready();
+  },
+
+  CREATE_ERROR: function(message) {
+    this._finalizer();
+    this._ready(message);
+  },
+
+  CLOSED: function(message) {
+    this._finalizer();
+  }
+};
+
+
+/**
+ * Something that tracks all the IdpChannel instances content-side.
+ * This is a central point for all message passing too.
+ */
+function IdpProxyChannelManager() {
+  this._channels = {};
+
+  this._mm = Cc["@mozilla.org/childprocessmessagemanager;1"]
+    .getService(Ci.nsIMessageSender);
+  this._mm.addMessageListener("WebRTC:IdP", this);
+}
+
+IdpProxyChannelManager.prototype = {
+  createChannel: function(url, messageCallback, onClose) {
+    let id = this._generateUuid();
+
+    let finalizer = () => {
+      delete this._channels[id];
+      onClose();
+    };
+    let channel = new IdpChannel(id, url, this._send.bind(this),
+                                 messageCallback, finalizer);
+    this._channels[id] = channel;
+    return channel;
+  },
+
+  receiveMessage: function(message) {
+    let channel = this._channels[message.data.id];
+    if (channel) {
+      channel[message.data.action](message.data.message);
+    } else {
+      throw new Error("WebRTC IdP (content) unhandled message: " +
+                      JSON.stringify(message.data));
     }
-    this.messagechannel = null;
-    this.sandbox = null;
+  },
+
+  _generateUuid: function() {
+    if (!this.uuidGenerator) {
+      this.uuidGenerator = Cc["@mozilla.org/uuid-generator;1"]
+        .getService(Ci.nsIUUIDGenerator);
+    }
+    return this.uuidGenerator.generateUUID().toString();
+  },
+
+  _send: function(id, action, message) {
+    let data = {
+      id: id,
+      action: action,
+      message: message
+    };
+    this._mm.sendAsyncMessage("WebRTC:IdP", data);
   }
 };
 
 /**
  * A message channel between the RTC PeerConnection and a designated IdP Proxy.
+ * This is the public API that the PeerConnectionIdp module relies on.
  *
  * @param domain (string) the domain to load up
  * @param protocol (string) Optional string for the IdP protocol
@@ -150,6 +174,8 @@ IdpProxy.validateProtocol = function(protocol) {
   }
 };
 
+IdpProxy.channelManager = new IdpProxyChannelManager();
+
 IdpProxy.prototype = {
   _reset: function() {
     this.channel = null;
@@ -177,15 +203,17 @@ IdpProxy.prototype = {
     }
     let well_known = "https://" + this.domain;
     well_known += "/.well-known/idp-proxy/" + this.protocol;
-    this.channel = new IdpChannel(well_known, this._messageReceived.bind(this));
-    this.channel.open(function(error) {
+    let manager = IdpProxy.channelManager;
+    this.channel = manager.createChannel(well_known, this._messageReceived.bind(this),
+                                         this._onClose.bind(this));
+    this.channel.open(error => {
       if (error) {
         this.close();
         if (typeof errorCallback === "function") {
           errorCallback(error);
         }
       }
-    }.bind(this));
+    });
   },
 
   /**
@@ -221,9 +249,7 @@ IdpProxy.prototype = {
     }
     if (!this.ready && message.type === "READY") {
       this.ready = true;
-      this.pending.forEach(function(p) {
-        this.send(p.message, p.callback);
-      }, this);
+      this.pending.forEach(p => this.send(p.message, p.callback));
       this.pending = [];
     } else if (this.tracking[message.id]) {
       var callback = this.tracking[message.id];
@@ -232,7 +258,7 @@ IdpProxy.prototype = {
     } else {
       let console = Cc["@mozilla.org/consoleservice;1"].
         getService(Ci.nsIConsoleService);
-      console.logStringMessage("Received bad message from IdP: " +
+      console.logStringMessage("WebRTC Identity: Received bad message from IdP: " +
                                message.id + ":" + message.type);
     }
   },
@@ -244,23 +270,21 @@ IdpProxy.prototype = {
     if (!this.channel) {
       return;
     }
+    this.channel.close();
+  },
 
+  _onClose: function() {
     // clear out before letting others know in case they do something bad
     let trackingCopy = this.tracking;
     let pendingCopy = this.pending;
 
-    this.channel.close();
     this._reset();
 
     // dump a message of type "ERROR" in response to all outstanding
     // messages to the IdP
     let error = { type: "ERROR", error: "IdP closed" };
-    Object.keys(trackingCopy).forEach(function(k) {
-      trackingCopy[k](error);
-    });
-    pendingCopy.forEach(function(p) {
-      p.callback(error);
-    });
+    Object.keys(trackingCopy).forEach(k => this.trackingCopy[k](error));
+    pendingCopy.forEach(p => p.callback(error));
   },
 
   toString: function() {

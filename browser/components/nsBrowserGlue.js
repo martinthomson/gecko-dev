@@ -196,7 +196,7 @@ BrowserGlue.prototype = {
   },
 #endif
 
-  // nsIObserver implementation 
+  // nsIObserver implementation
   observe: function BG_observe(subject, topic, data) {
     switch (topic) {
       case "prefservice:after-app-defaults":
@@ -381,7 +381,7 @@ BrowserGlue.prototype = {
     }
   },
 
-  // initialization (called on application startup) 
+  // initialization (called on application startup)
   _init: function BG__init() {
     let os = Services.obs;
     os.addObserver(this, "prefservice:after-app-defaults", false);
@@ -468,7 +468,7 @@ BrowserGlue.prototype = {
     this._sanitizer.onStartup();
     // check if we're in safe mode
     if (Services.appinfo.inSafeMode) {
-      Services.ww.openWindow(null, "chrome://browser/content/safeMode.xul", 
+      Services.ww.openWindow(null, "chrome://browser/content/safeMode.xul",
                              "_blank", "chrome,centerscreen,modal,resizable=no", null);
     }
 
@@ -497,6 +497,9 @@ BrowserGlue.prototype = {
     ShumwayUtils.init();
 #endif
     webrtcUI.init();
+    this._messageManager = Cc["@mozilla.org/parentprocessmessagemanager;1"]
+      .getService(Ci.nsIMessageListenerManager);
+    this._messageManager.addMessageListener("WebRTC:IdP", this);
     AboutHome.init();
     SessionStore.init();
     BrowserUITelemetry.init();
@@ -508,6 +511,17 @@ BrowserGlue.prototype = {
     }
 
     Services.obs.notifyObservers(null, "browser-ui-startup-complete", "");
+  },
+
+  receiveMessage: function(message) {
+    if (message.name === "WebRTC:IdP") {
+      // Rather than load this module at startup, listen for messages intended
+      // for it.  When a message arrives, load it up, pass it the message and
+      // then stop listening.  The module will handle future messages.
+      Cu.import("resource://gre/modules/media/IdpProxyChrome.jsm");
+      webrtcIdpManager.receiveMessage(message);
+      this._messageManager.removeMessageListener("WebRTC:IdP", this);
+    }
   },
 
   _checkForOldBuildUpdates: function () {
@@ -686,6 +700,7 @@ BrowserGlue.prototype = {
       SignInToWebsiteUX.uninit();
     }
 #endif
+    this._messageManager.removeMessageListener("WebRTC:IdP", this);
     webrtcUI.uninit();
   },
 
@@ -1551,7 +1566,7 @@ BrowserGlue.prototype = {
     }
 
     if (currentUIVersion < 19) {
-      let detector = null;    
+      let detector = null;
       try {
         detector = Services.prefs.getComplexValue("intl.charset.detector",
                                                   Ci.nsIPrefLocalizedString).data;
