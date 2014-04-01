@@ -95,6 +95,7 @@ function IdpSandboxManager() {
   let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"]
     .getService(Ci.nsIMessageListenerManager);
   ppmm.addMessageListener("WebRTC:IdP", this);
+  ppmm.addMessageListener("child-process-shutdown", this);
 }
 
 IdpSandboxManager.prototype = {
@@ -107,13 +108,31 @@ IdpSandboxManager.prototype = {
    *   message: data that goes along with this, contents of which depend on type
    */
   receiveMessage: function(message) {
-    dump("Received at the parent: " + JSON.stringify(message));
-    if (typeof this[message.data.action] === "function") {
+    dump("Received at the parent: " + JSON.stringify(message) + "\n");
+    if (message.name === "child-process-shutdown") {
+      this._cleanup(message.target);
+    } else if (typeof this[message.data.action] === "function") {
       this[message.data.action](message.target, message.data.id, message.data.message);
     } else {
       // blow up
       throw new Error("WebRTC IdP handler (chrome) received unknown message type");
     }
+  },
+
+  /**
+   * When a process shuts down, we need to make doubly certain that all the
+   * sandboxes are removed.  This collection uses weak references, so they
+   * shouldn't leak if everything goes well, only cleanup if things go poorly.
+   */
+  _cleanup: function(caller) {
+    dump("Shutting down: " + JSON.stringify(caller));
+    Object.keys(caller.idpSandboxes).forEach(id => {
+      let wrapper = caller.idpSandboxes[id].get();
+      if (wrapper) {
+        wrapper.close();
+      }
+    });
+    delete caller.idpSandboxes;
   },
 
   /**
@@ -140,6 +159,11 @@ IdpSandboxManager.prototype = {
         this._send(caller, id, "CREATE_ERROR", e);
       } else {
         this._wrappers[id] = wrapper;
+        if (!caller.idpSandboxes) {
+          caller.idpSandboxes = {};
+        }
+        caller.idpSandboxes[id] = Cu.getWeakReference(wrapper);
+        dump("created in: " + JSON.stringify(caller) + "\n");
         this._send(caller, id, "CREATED");
       }
     });
@@ -166,6 +190,7 @@ IdpSandboxManager.prototype = {
 
     this._wrappers[id].close();
     delete this._wrappers[id];
+    delete caller.idpSandboxes[id];
     this._send(caller, id, "CLOSED");
   },
 

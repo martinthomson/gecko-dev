@@ -199,10 +199,6 @@
           this.messageManager.addMessageListener("DocumentInserted", this);
           this.messageManager.addMessageListener("FullZoomChange", this);
           this.messageManager.addMessageListener("TextZoomChange", this);
-  let ppmm = Cc["@mozilla.org/parentprocessmessagemanager;1"]
-    .getService(Ci.nsIMessageListenerManager);
-  ppmm.addMessageListener("WebRTC:IdP", this);
-          this.messageManager.addMessageListener("WebRTC:IdP", this);
           this.messageManager.loadFrameScript("chrome://global/content/browser-child.js", true);
 
           if (this.hasAttribute("selectpopup")) {
@@ -271,13 +267,6 @@
               Cu.import("resource://gre/modules/SelectParentHelper.jsm");
               let dropdown = document.getElementById(this.getAttribute("selectpopup"));
               SelectParentHelper.hide(dropdown);
-              break;
-            }
-
-            case "WebRTC:IdP": {
-              Cu.import("resource://gre/modules/media/IdpProxyChrome.jsm");
-              webrtcIdpManager.receiveMessage(aMessage);
-              this.messageManager.removeMessageListener("WebRTC:IdP", this);
               break;
             }
 

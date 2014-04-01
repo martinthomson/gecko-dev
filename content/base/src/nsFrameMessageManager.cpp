@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "base/basictypes.h"
+#include <stdio.h>
 
 #include "nsFrameMessageManager.h"
 
@@ -260,6 +261,11 @@ NS_IMETHODIMP
 nsFrameMessageManager::AddMessageListener(const nsAString& aMessage,
                                           nsIMessageListener* aListener)
 {
+  fprintf(stderr, "parent %p child %p same %p\n",
+          nsFrameMessageManager::sParentProcessManager,
+          nsFrameMessageManager::sChildProcessManager,
+          nsFrameMessageManager::sSameProcessParentManager);
+  fprintf(stderr, "%p: listen %s\n", this, NS_ConvertUTF16toUTF8(aMessage).get());
   nsAutoTObserverArray<nsMessageListenerInfo, 1>* listeners =
     mListeners.Get(aMessage);
   if (!listeners) {
@@ -683,6 +689,11 @@ nsFrameMessageManager::SendAsyncMessage(const nsAString& aMessageName,
                                         JSContext* aCx,
                                         uint8_t aArgc)
 {
+  fprintf(stderr, "parent %p child %p same %p\n",
+          nsFrameMessageManager::sParentProcessManager,
+          nsFrameMessageManager::sChildProcessManager,
+          nsFrameMessageManager::sSameProcessParentManager);
+  fprintf(stderr, "%p: send %s\n", this, NS_ConvertUTF16toUTF8(aMessageName).get());
   return DispatchAsyncMessage(aMessageName, aJSON, aObjects, aPrincipal, aCx,
                               aArgc);
 }
@@ -887,6 +898,12 @@ nsFrameMessageManager::ReceiveMessage(nsISupports* aTarget,
   AutoSafeJSContext cx;
   nsAutoTObserverArray<nsMessageListenerInfo, 1>* listeners =
     mListeners.Get(aMessage);
+
+  fprintf(stderr, "parent %p child %p same %p\n",
+          nsFrameMessageManager::sParentProcessManager,
+          nsFrameMessageManager::sChildProcessManager,
+          nsFrameMessageManager::sSameProcessParentManager);
+  fprintf(stderr, "%p: msg %s\n", this, NS_ConvertUTF16toUTF8(aMessage).get());
   if (listeners) {
 
     MMListenerRemover lr(this);
