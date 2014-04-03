@@ -1462,6 +1462,18 @@ PeerConnectionImpl::SetDtlsConnected(bool aPrivacyRequested)
   return NS_OK;
 }
 
+#ifdef MOZILLA_INTERNAL_API
+void
+PeerConnectionImpl::PrincipalChanged(DOMMediaStream* aMediaStream) {
+  nsIDocument* doc = GetWindow()->GetExtantDoc();
+  if (doc) {
+    mMedia->UpdateSinkIdentity_m(doc->NodePrincipal(), mPeerIdentity);
+  } else {
+    CSFLogInfo(logTag, "Can't update sink principal; document gone");
+  }
+}
+#endif
+
 nsresult
 PeerConnectionImpl::AddStream(DOMMediaStream &aMediaStream,
                               const MediaConstraintsInternal& aConstraints)
@@ -1503,6 +1515,8 @@ PeerConnectionImpl::AddStream(DOMMediaStream &aMediaStream,
     return res;
   }
 
+  aMediaStream.AddPrincipalChangeObserver(this);
+
   // TODO(ekr@rtfm.com): these integers should be the track IDs
   if (hints & DOMMediaStream::HINT_CONTENTS_AUDIO) {
     cc_media_constraints_t* cc_constraints = aConstraints.build();
@@ -1530,6 +1544,8 @@ PeerConnectionImpl::RemoveStream(DOMMediaStream& aMediaStream) {
 
   if (NS_FAILED(res))
     return res;
+
+  aMediaStream.RemovePrincipalChangeObserver(this);
 
   uint32_t hints = aMediaStream.GetHintContents();
 
@@ -1743,6 +1759,12 @@ PeerConnectionImpl::ShutdownMedia()
     return;
 
 #ifdef MOZILLA_INTERNAL_API
+  // before we destroy references to local streams, detach from them
+  for(uint32_t i = 0; i < media()->LocalStreamsLength(); ++i) {
+    LocalSourceStreamInfo *info = media()->GetLocalStream(i);
+    info->GetMediaStream()->RemovePrincipalChangeObserver(this);
+  }
+
   // End of call to be recorded in Telemetry
   if (!mStartTime.IsNull()){
     TimeDuration timeDelta = TimeStamp::Now() - mStartTime;
