@@ -620,14 +620,17 @@ ssl3_SelectAppProtocol(sslSocket *ss, PRUint16 ex_type, SECItem *data)
     SECItem result = { siBuffer, resultBuffer, 0 };
 
     rv = ssl3_ValidateNextProtoNego(data->data, data->len);
-    if (rv != SECSuccess)
-        return rv;
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
 
     PORT_Assert(ss->nextProtoCallback);
     rv = ss->nextProtoCallback(ss->nextProtoArg, ss->fd, data->data, data->len,
                                result.data, &result.len, sizeof resultBuffer);
-    if (rv != SECSuccess)
-        return rv;
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
     /* If the callback wrote more than allowed to |result| it has corrupted our
      * stack. */
     if (result.len > sizeof resultBuffer) {
