@@ -619,12 +619,13 @@ ssl3_ClientHandleNextProtoNegoXtn(sslSocket *ss, PRUint16 ex_type,
          * message. Thus, these two extensions cannot both be negotiated on the
          * same connection. */
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
-        return SECFailure;
+        return SECSuccess;
     }
 
     rv = ssl3_ValidateNextProtoNego(data->data, data->len);
-    if (rv != SECSuccess)
-        return rv;
+    if (rv != SECSuccess) {
+        return SECSuccess;
+    }
 
     /* ss->nextProtoCallback cannot normally be NULL if we negotiated the
      * extension. However, It is possible that an application erroneously
@@ -635,13 +636,15 @@ ssl3_ClientHandleNextProtoNegoXtn(sslSocket *ss, PRUint16 ex_type,
         /* XXX Use a better error code. This is an application error, not an
          * NSS bug. */
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
-        return SECFailure;
+        return SECSuccess;
     }
 
     rv = ss->nextProtoCallback(ss->nextProtoArg, ss->fd, data->data, data->len,
                                result.data, &result.len, sizeof resultBuffer);
-    if (rv != SECSuccess)
-        return rv;
+    if (rv != SECSuccess) {
+        return SECSuccess;
+    }
+
     /* If the callback wrote more than allowed to |result| it has corrupted our
      * stack. */
     if (result.len > sizeof resultBuffer) {
