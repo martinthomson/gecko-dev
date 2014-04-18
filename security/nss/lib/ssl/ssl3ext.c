@@ -735,7 +735,7 @@ ssl3_ClientHandleAppProtoXtn(sslSocket *ss, PRUint16 ex_type, SECItem *data)
 
     if (ssl3_ExtensionNegotiated(ss, ssl_next_proto_nego_xtn)) {
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
-        return SECFailure;
+        return SECSuccess;
     }
 
     /* The extension data from the server has the following format:
@@ -744,14 +744,14 @@ ssl3_ClientHandleAppProtoXtn(sslSocket *ss, PRUint16 ex_type, SECItem *data)
      *   uint8 protocol_name[len]; */
     if (data->len < 4 || data->len > 2 + 1 + 255) {
         PORT_SetError(SSL_ERROR_NEXT_PROTOCOL_DATA_INVALID);
-        return SECFailure;
+        return SECSuccess;
     }
 
     name_list_len = ((PRUint16) d[0]) << 8 |
                     ((PRUint16) d[1]);
     if (name_list_len != data->len - 2 || d[2] != data->len - 3) {
         PORT_SetError(SSL_ERROR_NEXT_PROTOCOL_DATA_INVALID);
-        return SECFailure;
+        return SECSuccess;
     }
 
     protocol_name.data = data->data + 3;
