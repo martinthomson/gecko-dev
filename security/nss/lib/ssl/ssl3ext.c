@@ -398,13 +398,7 @@ ssl3_HandleServerNameXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
     PRInt32  listLenBytes = 0;
 
     if (!ss->sec.isServer) {
-        /* Verify extension_data is empty. */
-        if (data->data || data->len ||
-            !ssl3_ExtensionNegotiated(ss, ssl_server_name_xtn)) {
-            /* malformed or was not initiated by the client.*/
-            return SECFailure;
-        }
-        return SECSuccess;
+        return SECSuccess; /* ignore extension */
     }
 
     /* Server side - consume client data and register server sender. */
@@ -414,33 +408,36 @@ ssl3_HandleServerNameXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
     }
     /* length of server_name_list */
     listLenBytes = ssl3_ConsumeHandshakeNumber(ss, 2, &data->data, &data->len);
-    if (listLenBytes == 0 || listLenBytes != data->len) {
+    if (listLenBytes < 0 || listLenBytes != data->len) {
         return SECFailure;
+    }
+    if (listLenBytes == 0) {
+        return SECSuccess; /* ignore an empty extension */
     }
     ldata = *data;
     /* Calculate the size of the array.*/
     while (listLenBytes > 0) {
         SECItem litem;
         SECStatus rv;
-        PRInt32  type;
-        /* Name Type (sni_host_name) */
+        PRInt32 type;
+        /* Skip Name Type (sni_host_name) */
         type = ssl3_ConsumeHandshakeNumber(ss, 1, &ldata.data, &ldata.len);
-        if (!ldata.len) {
+        if (type < 0) { /* i.e., SECFailure */
             return SECFailure;
         }
         rv = ssl3_ConsumeHandshakeVariable(ss, &litem, 2, &ldata.data, &ldata.len);
         if (rv != SECSuccess) {
-            return SECFailure;
+            return rv;
         }
-        /* Adjust total length for cunsumed item, item len and type.*/
+        /* Adjust total length for consumed item, item len and type.*/
         listLenBytes -= litem.len + 3;
         if (listLenBytes > 0 && !ldata.len) {
-            return SECFailure;
+            return ssl3_DecodeError(ss);
         }
         listCount += 1;
     }
     if (!listCount) {
-        return SECFailure;
+        return SECFailure;  /* nothing we can act on */
     }
     names = PORT_ZNewArray(SECItem, listCount);
     if (!names) {
@@ -464,7 +461,8 @@ ssl3_HandleServerNameXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
         rv = ssl3_ConsumeHandshakeVariable(ss, &names[namesPos], 2,
                                            &data->data, &data->len);
         if (rv != SECSuccess) {
-            goto loser;
+            PORT_Free(names);
+            return SECFailure;
         }
         if (nametypePresent == PR_FALSE) {
             namesPos += 1;
@@ -479,10 +477,6 @@ ssl3_HandleServerNameXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
     xtnData->negotiated[xtnData->numNegotiated++] = ssl_server_name_xtn;
 
     return SECSuccess;
-
-loser:
-    PORT_Free(names);
-    return SECFailure;
 }
 
 /* Called by both clients and servers.
@@ -2518,4 +2512,3 @@ loser:
 
     return SECSuccess;
 }
-
