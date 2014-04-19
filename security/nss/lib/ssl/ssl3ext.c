@@ -2267,7 +2267,7 @@ ssl3_ServerHandleSigAlgsXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
     /* Trailing data, empty value, or odd-length value is invalid. */
     if (data->len != 0 || algorithms.len == 0 || (algorithms.len & 1) != 0) {
         PORT_SetError(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
-        return SECFailure;
+        return SECFailure;;
     }
 
     numAlgorithms = algorithms.len/2;
