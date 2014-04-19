@@ -1199,7 +1199,7 @@ ssl3_HandleSupportedPointFormatsXtn(sslSocket *ss, PRUint16 ex_type,
 loser:
     /* evil client doesn't support uncompressed */
     ssl3_DisableECCSuites(ss, ecSuites);
-    return SECFailure;
+    return SECSuccess;
 }
 
 
