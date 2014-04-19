@@ -1230,19 +1230,27 @@ ssl3_HandleSupportedCurvesXtn(sslSocket *ss, PRUint16 ex_type, SECItem *data)
     PRUint32 peerCurves   = 0;
     PRUint32 mutualCurves = 0;
     PRUint16 svrCertCurveName;
+    SECStatus rv = SECSuccess;
 
-    if (!data->data || data->len < 4 || data->len > 65535)
-        goto loser;
+    if (!data->data || data->len < 4 || data->len > 65535) {
+        goto disable_all;
+    }
+
     /* get the length of elliptic_curve_list */
     list_len = ssl3_ConsumeHandshakeNumber(ss, 2, &data->data, &data->len);
-    if (list_len < 0 || data->len != list_len || (data->len % 2) != 0) {
-        /* malformed */
-        goto loser;
+    if (list_len < 0) {
+        goto fail; /* fatal alert already sent */
+    }
+    if (data->len != list_len || (data->len % 2) != 0) {
+        goto disable_all;  /* malformed */
     }
     /* build bit vector of peer's supported curve names */
     while (data->len) {
         PRInt32  curve_name =
                  ssl3_ConsumeHandshakeNumber(ss, 2, &data->data, &data->len);
+        if (curve_name < 0) {
+            goto fail; /* fatal alert already sent */
+        }
         if (curve_name > ec_noName && curve_name < ec_pastLastName) {
             peerCurves |= (1U << curve_name);
         }
@@ -1250,7 +1258,7 @@ ssl3_HandleSupportedCurvesXtn(sslSocket *ss, PRUint16 ex_type, SECItem *data)
     /* What curves do we support in common? */
     mutualCurves = ss->ssl3.hs.negotiatedECCurves &= peerCurves;
     if (!mutualCurves) { /* no mutually supported EC Curves */
-        goto loser;
+        goto disable_all;
     }
 
     /* if our ECC cert doesn't use one of these supported curves,
@@ -1266,12 +1274,14 @@ ssl3_HandleSupportedCurvesXtn(sslSocket *ss, PRUint16 ex_type, SECItem *data)
      */
     ssl3_DisableECCSuites(ss, ecdh_ecdsa_suites);
     ssl3_DisableECCSuites(ss, ecdhe_ecdsa_suites);
-    return SECFailure;
+    return SECSuccess;
 
-loser:
+fail:
+    rv = SECFailure;
+disable_all:
     /* no common curve supported */
     ssl3_DisableECCSuites(ss, ecSuites);
-    return SECFailure;
+    return rv;
 }
 
 #endif /* NSS_DISABLE_ECC */
