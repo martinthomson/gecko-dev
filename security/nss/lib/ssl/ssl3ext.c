@@ -2125,17 +2125,16 @@ ssl3_HandleUseSRTPXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
     if (!ss->sec.isServer) {
         /* Client side */
         if (!data->data || !data->len) {
-            /* malformed */
-            return SECFailure;
+            return SECFailure; /* malformed */
         }
 
         /* Get the cipher list */
         rv = ssl3_ConsumeHandshakeVariable(ss, &ciphers, 2,
                                            &data->data, &data->len);
         if (rv != SECSuccess) {
-            return SECFailure;
+            return SECFailure;  /* fatal alert already sent */
         }
-        /* Now check that the number of ciphers listed is 1 (len = 2) */
+        /* Now check that the server has picked just 1 (i.e., len = 2) */
         if (ciphers.len != 2) {
             return SECFailure;
         }
@@ -2167,20 +2166,14 @@ ssl3_HandleUseSRTPXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
          *   If the client detects a nonzero-length MKI in the server's
          *   response that is different than the one the client offered,
          *   then the client MUST abort the handshake and SHOULD send an
-         *   invalid_parameter alert.
-         *
-         * Due to a limitation of the ssl3_HandleHelloExtensions function,
-         * returning SECFailure here won't abort the handshake.  It will
-         * merely cause the use_srtp extension to be not negotiated.  We
-         * should fix this.  See NSS bug 753136.
+         *   invalid_parameter [sic: actually illegal_parameter] alert.
          */
         if (litem.len != 0) {
-            return SECFailure;
+            return SSL3_SendAlert(ss, alert_fatal, illegal_parameter);
         }
 
         if (data->len != 0) {
-            /* malformed */
-            return SECFailure;
+            return SECFailure; /* extra trailing bytes */
         }
 
         /* OK, this looks fine. */
@@ -2197,8 +2190,7 @@ ssl3_HandleUseSRTPXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
     }
 
     if (!data->data || data->len < 5) {
-        /* malformed */
-        return SECFailure;
+        return SECFailure; /* malformed */
     }
 
     /* Get the cipher list */
@@ -2236,7 +2228,7 @@ ssl3_HandleUseSRTPXtn(sslSocket * ss, PRUint16 ex_type, SECItem *data)
 
     /* Now figure out what to do */
     if (!found) {
-        /* No matching ciphers */
+        /* No matching ciphers, pretend we don't support use_srtp */
         return SECSuccess;
     }
 
