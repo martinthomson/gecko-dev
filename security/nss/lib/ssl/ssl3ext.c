@@ -1890,9 +1890,9 @@ ssl3_HandleHelloExtensions(sslSocket *ss, SSL3Opaque **b, PRUint32 *length)
             if (handler->ex_type == extension_type) {
                 rv = (*handler->ex_handler)(ss, (PRUint16)extension_type,
                                                         &extension_data);
-                /* Ignore this result */
-                /* Treat all bad extensions as unrecognized types. */
-                break;
+                if (rv != SECSuccess) {
+                    return rv;
+                }
             }
         }
     }
