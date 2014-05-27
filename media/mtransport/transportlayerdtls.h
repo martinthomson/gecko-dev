@@ -73,7 +73,6 @@ class TransportLayerDtls : public TransportLayer {
                                  const unsigned char *digest_value,
                                  size_t digest_len);
 
-  nsresult SetSrtpCiphers(std::vector<uint16_t> ciphers);
   nsresult GetSrtpCipher(uint16_t *cipher);
 
   nsresult ExportKeyingMaterial(const std::string& label,
@@ -145,7 +144,6 @@ class TransportLayerDtls : public TransportLayer {
                         CERTCertificate *cert);
 
   RefPtr<DtlsIdentity> identity_;
-  std::vector<uint16_t> srtp_ciphers_;
 
   Role role_;
   Verification verification_mode_;

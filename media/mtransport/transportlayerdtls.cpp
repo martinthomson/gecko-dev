@@ -349,6 +349,11 @@ static const struct PRIOMethods TransportLayerMethods = {
   TransportLayerReserved
 };
 
+static const uint16_t SrtpCiphers[] = {
+  SRTP_AES128_CM_HMAC_SHA1_80,
+  SRTP_AES128_CM_HMAC_SHA1_32
+};
+
 TransportLayerDtls::~TransportLayerDtls() {
   if (timer_) {
     timer_->Cancel();
@@ -548,15 +553,11 @@ bool TransportLayerDtls::Setup() {
   }
 
   // Set the SRTP ciphers
-  if (srtp_ciphers_.size()) {
-    // Note: std::vector is guaranteed to contiguous
-    rv = SSL_SetSRTPCiphers(ssl_fd, &srtp_ciphers_[0],
-                            srtp_ciphers_.size());
-
-    if (rv != SECSuccess) {
-      MOZ_MTLOG(ML_ERROR, "Couldn't set SRTP cipher suite");
-      return false;
-    }
+  rv = SSL_SetSRTPCiphers(ssl_fd, SrtpCiphers,
+                          sizeof(SrtpCiphers) / sizeof(uint16_t));
+  if (rv != SECSuccess) {
+    MOZ_MTLOG(ML_ERROR, "Couldn't set SRTP cipher suite");
+    return false;
   }
 
   // Certificate validation
@@ -789,13 +790,6 @@ SECStatus TransportLayerDtls::GetClientAuthDataHook(void *arg, PRFileDesc *fd,
   }
 
   return SECSuccess;
-}
-
-nsresult TransportLayerDtls::SetSrtpCiphers(std::vector<uint16_t> ciphers) {
-  // TODO: We should check these
-  srtp_ciphers_ = ciphers;
-
-  return NS_OK;
 }
 
 nsresult TransportLayerDtls::GetSrtpCipher(uint16_t *cipher) {

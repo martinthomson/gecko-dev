@@ -3218,16 +3218,6 @@ vcmCreateTransportFlow(sipcc::PeerConnectionImpl *pc, int level, bool rtcp,
       return nullptr;
     }
 
-    std::vector<uint16_t> srtp_ciphers;
-    srtp_ciphers.push_back(SRTP_AES128_CM_HMAC_SHA1_80);
-    srtp_ciphers.push_back(SRTP_AES128_CM_HMAC_SHA1_32);
-
-    res = dtls->SetSrtpCiphers(srtp_ciphers);
-    if (!NS_SUCCEEDED(res)) {
-      CSFLogError(logTag, "Couldn't set SRTP ciphers");
-      return nullptr;
-    }
-
     nsAutoPtr<std::queue<TransportLayer *> > layers(new std::queue<TransportLayer *>);
     layers->push(ice.forget());
     layers->push(dtls.forget());
