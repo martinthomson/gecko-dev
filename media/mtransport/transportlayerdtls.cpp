@@ -349,11 +349,6 @@ static const struct PRIOMethods TransportLayerMethods = {
   TransportLayerReserved
 };
 
-static const uint16_t SrtpCiphers[] = {
-  SRTP_AES128_CM_HMAC_SHA1_80,
-  SRTP_AES128_CM_HMAC_SHA1_32
-};
-
 TransportLayerDtls::~TransportLayerDtls() {
   if (timer_) {
     timer_->Cancel();
@@ -503,11 +498,11 @@ bool TransportLayerDtls::Setup() {
     }
   }
 
-  // Require TLS 1.1. Perhaps some day in the future we will allow
-  // TLS 1.0 for stream modes.
+  // Require TLS 1.1 or 1.2. Perhaps some day in the future we will allow TLS
+  // 1.0 for stream modes.
   SSLVersionRange version_range = {
     SSL_LIBRARY_VERSION_TLS_1_1,
-    SSL_LIBRARY_VERSION_TLS_1_1
+    SSL_LIBRARY_VERSION_TLS_1_2
   };
 
   rv = SSL_VersionRangeSet(ssl_fd, &version_range);
@@ -552,11 +547,7 @@ bool TransportLayerDtls::Setup() {
     return false;
   }
 
-  // Set the SRTP ciphers
-  rv = SSL_SetSRTPCiphers(ssl_fd, SrtpCiphers,
-                          sizeof(SrtpCiphers) / sizeof(uint16_t));
-  if (rv != SECSuccess) {
-    MOZ_MTLOG(ML_ERROR, "Couldn't set SRTP cipher suite");
+  if (!SetupCipherSuites(ssl_fd)) {
     return false;
   }
 
@@ -587,6 +578,85 @@ bool TransportLayerDtls::Setup() {
   return true;
 }
 
+static const uint16_t SrtpCiphers[] = {
+  SRTP_AES128_CM_HMAC_SHA1_80,
+  SRTP_AES128_CM_HMAC_SHA1_32
+};
+
+// Ciphers we need to enable.  These are on by default in standard firefox
+// builds, but can be disabled with prefs and they aren't on in our unit tests
+// since that uses NSS default configuration.
+// Only override prefs to comply with MUST statements in the security-arch.
+static const uint32_t EnabledCiphers[] = {
+  TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,
+  TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+};
+
+// Ciphers we explicitly want to disable. These are the modes we have to permit
+// for compatibility reasons in HTTPS. WebRTC has a narrower permitted set.
+// Anything outside this list is governed by the usual combination of policy and
+// user preferences.
+static const uint32_t DisabledCiphers[] = {
+  TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+  TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+
+  TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA,
+  TLS_DHE_DSS_WITH_RC4_128_SHA,
+
+  TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_ECDH_ECDSA_WITH_RC4_128_SHA,
+  TLS_ECDH_RSA_WITH_RC4_128_SHA,
+
+  TLS_RSA_WITH_AES_128_GCM_SHA256,
+  TLS_RSA_WITH_AES_128_CBC_SHA,
+  TLS_RSA_WITH_AES_128_CBC_SHA256,
+  TLS_RSA_WITH_CAMELLIA_128_CBC_SHA,
+  TLS_RSA_WITH_AES_256_CBC_SHA,
+  TLS_RSA_WITH_AES_256_CBC_SHA256,
+  TLS_RSA_WITH_CAMELLIA_256_CBC_SHA,
+  TLS_RSA_WITH_SEED_CBC_SHA,
+  SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA,
+  TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_RSA_WITH_RC4_128_SHA,
+  TLS_RSA_WITH_RC4_128_MD5,
+};
+
+bool TransportLayerDtls::SetupCipherSuites(PRFileDesc* ssl_fd) const {
+  // Set the SRTP ciphers
+  SECStatus rv = SSL_SetSRTPCiphers(ssl_fd, SrtpCiphers,
+                                    sizeof(SrtpCiphers) / sizeof(uint16_t));
+  if (rv != SECSuccess) {
+    MOZ_MTLOG(ML_ERROR, "Couldn't set SRTP cipher suite");
+    return false;
+  }
+
+
+  for (size_t i = 0; i < sizeof(EnabledCiphers) / sizeof(uint32_t); ++i) {
+    MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "Enabling: " << EnabledCiphers[i]);
+    SECStatus rv = SSL_CipherPrefSet(ssl_fd, EnabledCiphers[i], PR_TRUE);
+    if (rv != SECSuccess) {
+      MOZ_MTLOG(ML_ERROR, LAYER_INFO <<
+                "Unable to enable suite: " << EnabledCiphers[i]);
+      return false;
+    }
+  }
+
+  for (size_t i = 0; i < sizeof(DisabledCiphers) / sizeof(uint32_t); ++i) {
+    MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "Disabling: " << DisabledCiphers[i]);
+    SECStatus rv = SSL_CipherPrefSet(ssl_fd, DisabledCiphers[i], PR_FALSE);
+    if (rv != SECSuccess) {
+      MOZ_MTLOG(ML_NOTICE, LAYER_INFO <<
+                "Unable to disable suite: " << DisabledCiphers[i]);
+      // ignore SECFailure, because that indicates that the suite we wanted to
+      // disable wasn't even compiled in, which achieves the goal
+    }
+  }
+  return true;
+}
 
 void TransportLayerDtls::StateChange(TransportLayer *layer, State state) {
   if (state <= state_) {

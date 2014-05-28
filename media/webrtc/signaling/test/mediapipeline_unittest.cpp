@@ -75,9 +75,6 @@ class TransportInfo {
     }
     ASSERT_EQ((nsresult)NS_OK, res);
 
-    std::vector<uint16_t> ciphers;
-    ciphers.push_back(SRTP_AES128_CM_HMAC_SHA1_80);
-    dtls_->SetSrtpCiphers(ciphers);
     dtls_->SetIdentity(DtlsIdentity::Generate());
     dtls_->SetRole(client ? TransportLayerDtls::CLIENT :
       TransportLayerDtls::SERVER);
@@ -924,6 +921,3 @@ int main(int argc, char **argv) {
   delete test_utils;
   return rv;
 }
-
-
-
