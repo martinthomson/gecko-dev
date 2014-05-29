@@ -93,7 +93,7 @@ class MediaRecorder::Session: public nsIObserver
 
       nsRefPtr<MediaRecorder> recorder = mSession->mRecorder;
       if (!recorder) {
-	 return NS_OK;
+        return NS_OK;
       }
       recorder->SetMimeType(mSession->mMimeType);
       if (mSession->IsEncoderError()) {
@@ -337,10 +337,12 @@ private:
     mTrackUnionStream->SetAutofinish(true);
 
     // Bind this Track Union Stream with Source Media
-    mInputPort = mTrackUnionStream->AllocateInputPort(mRecorder->mStream->GetStream(), MediaInputPort::FLAG_BLOCK_OUTPUT);
+    mInputPort = mTrackUnionStream->AllocateInputPort(mRecorder->mStream->GetStream(),
+                                                      MediaInputPort::FLAG_BLOCK_OUTPUT);
 
     // Allocate encoder and bind with the Track Union Stream.
-    TracksAvailableCallback* tracksAvailableCallback = new TracksAvailableCallback(mRecorder->mSessions.LastElement());
+    TracksAvailableCallback* tracksAvailableCallback =
+      new TracksAvailableCallback(mRecorder->mSessions.LastElement());
     mRecorder->mStream->OnTracksAvailable(tracksAvailableCallback);
   }
 
