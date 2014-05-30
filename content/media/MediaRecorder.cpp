@@ -475,6 +475,9 @@ NS_IMPL_ISUPPORTS(MediaRecorder::Session, nsIObserver)
 MediaRecorder::~MediaRecorder()
 {
   LOG(PR_LOG_DEBUG, ("~MediaRecorder (%p)", this));
+  if (mStream) {
+    mStream->RemovePrincipalChangeObserver(this);
+  }
   for (uint32_t i = 0; i < mSessions.Length(); i ++) {
     if (mSessions[i]) {
       mSessions[i]->ForgetMediaRecorder();
@@ -526,7 +529,8 @@ MediaRecorder::Start(const Optional<int32_t>& aTimeSlice, ErrorResult& aResult)
     return;
   }
 
-  if (!mStream->GetPrincipal()) {
+  mPrincipal = mStream->GetPrincipal();
+  if (!mPrincipal) {
     aResult.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
@@ -535,6 +539,8 @@ MediaRecorder::Start(const Optional<int32_t>& aTimeSlice, ErrorResult& aResult)
     aResult.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
   }
+
+  mStream->AddPrincipalChangeObserver(this);
 
   int32_t timeSlice = 0;
   if (aTimeSlice.WasPassed()) {
@@ -562,6 +568,7 @@ MediaRecorder::Stop(ErrorResult& aResult)
     aResult.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
+  mStream->RemovePrincipalChangeObserver(this);
   mState = RecordingState::Inactive;
   if (mSessions.Length() > 0) {
     mSessions.LastElement()->Stop();
@@ -602,6 +609,31 @@ MediaRecorder::Resume(ErrorResult& aResult)
     return;
   }
   mState = RecordingState::Recording;
+}
+
+void
+MediaRecorder::PrincipalChanged(DOMMediaStream* aMediaStream)
+{
+  MOZ_ASSERT(!mStream || aMediaStream == mStream);
+
+  // Sadly, when the principal for the stream changes, this cannot be guaranteed
+  // to be perfectly synchronous with the change in the stream content.
+  // So we have to taint the current blob.  Best to abort at that point.
+  bool changed =
+    nsContentUtils::CombineResourcePrincipals(&mPrincipal, aMediaStream->GetPrincipal());
+  if (mState != RecordingState::Inactive) {
+    if (changed && !CheckPrincipal()) {
+      ErrorResult rv;
+      // it would be really nice if Stop was compliant with the spec
+      // let's just leave this workaround in place until it is
+      if (mState == RecordingState::Paused) {
+        Resume(rv);
+        MOZ_ASSERT(!rv.Failed());
+      }
+      Stop(rv);
+      MOZ_ASSERT(!rv.Failed());
+    }
+  }
 }
 
 class CreateAndDispatchBlobEventRunnable : public nsRunnable {
@@ -759,15 +791,14 @@ bool MediaRecorder::CheckPrincipal()
   if (!mStream) {
     return false;
   }
-  nsCOMPtr<nsIPrincipal> principal = mStream->GetPrincipal();
   if (!GetOwner())
     return false;
   nsCOMPtr<nsIDocument> doc = GetOwner()->GetExtantDoc();
-  if (!doc || !principal)
+  if (!doc || !mPrincipal)
     return false;
 
   bool subsumes;
-  if (NS_FAILED(doc->NodePrincipal()->Subsumes(principal, &subsumes)))
+  if (NS_FAILED(doc->NodePrincipal()->Subsumes(mPrincipal, &subsumes)))
     return false;
 
   return subsumes;

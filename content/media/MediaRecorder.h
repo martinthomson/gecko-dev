@@ -9,13 +9,13 @@
 
 #include "mozilla/dom/MediaRecorderBinding.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "DOMMediaStream.h"
 
 // Max size for allowing queue encoded data in memory
 #define MAX_ALLOW_MEMORY_BUFFER 1024000
 namespace mozilla {
 
 class ErrorResult;
-class DOMMediaStream;
 class EncodedBufferCache;
 class MediaEncoder;
 class ProcessedMediaStream;
@@ -35,7 +35,8 @@ namespace dom {
  * Also extract the encoded data and create blobs on every timeslice passed from start function or RequestData function called by UA.
  */
 
-class MediaRecorder : public DOMEventTargetHelper
+class MediaRecorder : public DOMEventTargetHelper,
+                      public DOMMediaStream::PrincipalChangeObserver
 {
   class Session;
   friend class CreateAndDispatchBlobEventRunnable;
@@ -72,6 +73,8 @@ public:
   RecordingState State() const { return mState; }
   // Return the current encoding MIME type selected by the MediaEncoder.
   void GetMimeType(nsString &aMimeType);
+
+  virtual void PrincipalChanged(DOMMediaStream* aMediaStream);
 
   static already_AddRefed<MediaRecorder>
   Constructor(const GlobalObject& aGlobal,
@@ -111,6 +114,8 @@ protected:
   Mutex mMutex;
   // It specifies the container format as well as the audio and video capture formats.
   nsString mMimeType;
+  // the principal of the current blob
+  nsCOMPtr<nsIPrincipal> mPrincipal;
 };
 
 }
