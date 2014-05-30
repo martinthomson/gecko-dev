@@ -1,0 +1,79 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for MediaRecorder Reaction to Principal Change</title>
+  <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<div>
+  <a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=1018299">Test for MediaRecorder Principal Handling</a>
+</div>
+<audio id="audio" autoplay></audio>
+
+<pre id="test">
+<script type="text/javascript">
+SimpleTest.waitForExplicitFinish();
+
+function done(isOK, message) {
+  ok(isOK, message);
+  SimpleTest.finish();
+}
+
+// hold a stronger reference to the recorder
+var mr;
+
+function testCrossOriginRecording() {
+  var audio = document.getElementById('audio');
+
+  var isPlaying;
+  function startRecording() {
+    if (isPlaying) { return; }
+    isPlaying = true;
+
+    var mixedStream = audio.mozCaptureStream();
+    mr = new MediaRecorder(mixedStream);
+    mr.onerror = function(ev) {
+      info('got error: ' + e.name);
+      done(e.name === 'SecurityError', 'error in recorder should be a security error');
+    };
+    mr.ondataavailable = function(ev) {
+      ok(true, 'got some recorder data');
+      // now we get a stream that will taint the element
+      navigator.mozGetUserMedia({ audio: true, peerIdentity: 'bob@example.com' },
+                                gotIsolatedStream, microphoneError);
+    };
+
+    try {
+      mr.start(1000); // we'll let it record a 1s chunk before mixing in crap
+      info('started recording');
+    } catch(err) {
+      done(false, 'error thrown trying to start recording: ' + err.name);
+    }
+  };
+
+  function microphoneError() {
+    done(false, 'unable to get microphone');
+  }
+
+  function gotAccessibleStream(stream) {
+    info('connecting accessible stream');
+    audio.mozSrcObject = stream;
+    audio.onplaying = startRecording;
+  }
+
+  function gotIsolatedStream(stream) {
+    info('mixing in inaccessible stream');
+    audio.mozSrcObject = stream;
+  }
+
+  navigator.mozGetUserMedia({ audio: true },
+                            gotAccessibleStream, microphoneError);
+}
+var pref = [['media.navigator.permission.disabled', true]];
+SpecialPowers.pushPrefEnv({'set': pref }, testCrossOriginRecording);
+</script>
+</pre>
+
+</body>
+</html>
