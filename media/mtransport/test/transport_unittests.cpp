@@ -290,7 +290,9 @@ class TransportTestPeer : public sigslot::has_slots<> {
                                   TransportLayerDtls::SERVER)),
         streams_(), candidates_(),
         peer_(nullptr),
-        gathering_complete_(false)
+        gathering_complete_(false),
+        enabled_cipersuites_(),
+        disabled_cipersuites_()
  {
     std::vector<NrIceStunServer> stun_servers;
     ScopedDeletePtr<NrIceStunServer> server(NrIceStunServer::Create(
@@ -366,6 +368,10 @@ class TransportTestPeer : public sigslot::has_slots<> {
     srtp_ciphers.push_back(SRTP_AES128_CM_HMAC_SHA1_80);
     srtp_ciphers.push_back(SRTP_AES128_CM_HMAC_SHA1_32);
 
+    SetSrtpCiphers(srtp_ciphers);
+ }
+
+  void SetSrtpCiphers(std::vector<uint16_t>& srtp_ciphers) {
     ASSERT_TRUE(NS_SUCCEEDED(dtls_->SetSrtpCiphers(srtp_ciphers)));
   }
 
@@ -381,7 +387,20 @@ class TransportTestPeer : public sigslot::has_slots<> {
     ASSERT_EQ((nsresult)NS_OK, flow_->PushLayer(lossy_));
     ASSERT_EQ((nsresult)NS_OK, flow_->PushLayer(dtls_));
 
+    TweakCiphers(dtls_->internal_fd());
+
     flow_->SignalPacketReceived.connect(this, &TransportTestPeer::PacketReceived);
+  }
+
+  void TweakCiphers(PRFileDesc* fd) {
+    for (auto it = enabled_cipersuites_.begin();
+         it != enabled_cipersuites_.end(); ++it) {
+      SSL_CipherPrefSet(fd, *it, PR_TRUE);
+    }
+    for (auto it = disabled_cipersuites_.begin();
+         it != disabled_cipersuites_.end(); ++it) {
+      SSL_CipherPrefSet(fd, *it, PR_FALSE);
+    }
   }
 
   void ConnectSocket(TransportTestPeer *peer) {
@@ -524,6 +543,12 @@ class TransportTestPeer : public sigslot::has_slots<> {
     lossy_->SetInspector(inspector);
   }
 
+  void SetCipherSuiteChanges(const std::vector<uint16_t>& enableThese,
+                             const std::vector<uint16_t>& disableThese) {
+    disabled_cipersuites_ = disableThese;
+    enabled_cipersuites_ = enableThese;
+  }
+
   TransportLayer::State state() {
     TransportLayer::State tstate;
 
@@ -586,6 +611,8 @@ class TransportTestPeer : public sigslot::has_slots<> {
   bool gathering_complete_;
   unsigned char fingerprint_[TransportLayerDtls::kMaxDigestLength];
   size_t fingerprint_len_;
+  std::vector<uint16_t> enabled_cipersuites_;
+  std::vector<uint16_t> disabled_cipersuites_;
 };
 
 
@@ -796,6 +823,110 @@ TEST_F(TransportTest, TestTransferIce) {
   TransferTest(1);
 }
 
+// For this next test, we need mutually exclusive sets of ciphersuites so we do
+// this the hard way...  which is also brittle because new ciphersuites will
+// cause this test to fail, if they are enabled by default.
+
+// Set A has all the first half ...
+static uint16_t SetACipherSuites[] {
+  TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+  TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+  TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+  TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+  TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+  TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,
+  TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,
+  TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+  TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_ECDHE_ECDSA_WITH_RC4_128_SHA,
+  TLS_ECDHE_RSA_WITH_RC4_128_SHA,
+  TLS_DHE_RSA_WITH_AES_128_GCM_SHA256,
+  TLS_DHE_RSA_WITH_AES_128_CBC_SHA,
+  TLS_DHE_DSS_WITH_AES_128_CBC_SHA,
+  TLS_DHE_RSA_WITH_AES_128_CBC_SHA256,
+  TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA,
+  TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA,
+  TLS_DHE_RSA_WITH_AES_256_CBC_SHA,
+  TLS_DHE_DSS_WITH_AES_256_CBC_SHA,
+  TLS_DHE_RSA_WITH_AES_256_CBC_SHA256,
+  TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA,
+  TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA,
+  TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA,
+  TLS_DHE_DSS_WITH_RC4_128_SHA,
+  TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA,
+  TLS_ECDH_RSA_WITH_AES_128_CBC_SHA,
+  TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA,
+  TLS_ECDH_RSA_WITH_AES_256_CBC_SHA,
+  TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_ECDH_ECDSA_WITH_RC4_128_SHA,
+  TLS_ECDH_RSA_WITH_RC4_128_SHA
+};
+
+// ... Set B has all the rest
+static uint16_t SetBCipherSuites[] {
+ TLS_RSA_WITH_AES_128_GCM_SHA256,
+  TLS_RSA_WITH_AES_128_CBC_SHA,
+  TLS_RSA_WITH_AES_128_CBC_SHA256,
+  TLS_RSA_WITH_CAMELLIA_128_CBC_SHA,
+  TLS_RSA_WITH_AES_256_CBC_SHA,
+  TLS_RSA_WITH_AES_256_CBC_SHA256,
+  TLS_RSA_WITH_CAMELLIA_256_CBC_SHA,
+  TLS_RSA_WITH_SEED_CBC_SHA,
+  SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA,
+  TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+  TLS_RSA_WITH_RC4_128_SHA,
+  TLS_RSA_WITH_RC4_128_MD5,
+  TLS_DHE_RSA_WITH_DES_CBC_SHA,
+  TLS_DHE_DSS_WITH_DES_CBC_SHA,
+  SSL_RSA_FIPS_WITH_DES_CBC_SHA,
+  TLS_RSA_WITH_DES_CBC_SHA,
+  TLS_RSA_EXPORT1024_WITH_RC4_56_SHA,
+  TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA,
+  TLS_RSA_EXPORT_WITH_RC4_40_MD5,
+  TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5,
+  TLS_ECDHE_ECDSA_WITH_NULL_SHA,
+  TLS_ECDHE_RSA_WITH_NULL_SHA,
+  TLS_ECDH_RSA_WITH_NULL_SHA,
+  TLS_ECDH_ECDSA_WITH_NULL_SHA,
+  TLS_RSA_WITH_NULL_SHA,
+  TLS_RSA_WITH_NULL_SHA256,
+  TLS_RSA_WITH_NULL_MD5
+};
+
+
+TEST_F(TransportTest, TestCipherMismatch) {
+  // create mutually exclusive sets
+  // Note: this will fail when NSS gets new ciphersuites
+  std::vector<uint16_t> setA(SetACipherSuites,
+                             SetACipherSuites + (sizeof(SetACipherSuites) / 2));
+  std::vector<uint16_t> setB(SetBCipherSuites,
+                             SetBCipherSuites + (sizeof(SetBCipherSuites) / 2));
+
+  SetDtlsPeer();
+  p1_->SetCipherSuiteChanges(setA, setB);
+  p2_->SetCipherSuiteChanges(setB, setA);
+
+  ConnectSocketExpectFail();
+}
+
+TEST_F(TransportTest, TestSrtpMismatch) {
+  std::vector<uint16_t> setA;
+  setA.push_back(SRTP_AES128_CM_HMAC_SHA1_80);
+  std::vector<uint16_t> setB;
+  setB.push_back(SRTP_AES128_CM_HMAC_SHA1_32);
+
+  p1_->SetSrtpCiphers(setA);
+  p2_->SetSrtpCiphers(setB);
+  SetDtlsPeer();
+  ConnectSocket();
+
+  ASSERT_EQ(0, p1_->srtpCipher());
+  ASSERT_EQ(0, p2_->srtpCipher());
+}
+
 TEST(PushTests, LayerFail) {
   TransportFlow flow;
   nsresult rv;
@@ -815,7 +946,6 @@ TEST(PushTests, LayerFail) {
   ASSERT_TRUE(NS_FAILED(rv));
   ASSERT_EQ(true, destroyed1);
 }
-
 
 TEST(PushTests, LayersFail) {
   TransportFlow flow;
