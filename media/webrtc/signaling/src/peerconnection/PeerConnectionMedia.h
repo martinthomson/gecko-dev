@@ -361,9 +361,6 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   // Add a transport flow
   void AddTransportFlow(int aIndex, bool aRtcp,
                         const mozilla::RefPtr<mozilla::TransportFlow> &aFlow);
-  void ConnectDtlsListener_s(const mozilla::RefPtr<mozilla::TransportFlow>& aFlow);
-  void DtlsConnected(mozilla::TransportLayer* aFlow,
-                     mozilla::TransportLayer::State state);
 
   mozilla::RefPtr<mozilla::MediaSessionConduit> GetConduit(int aStreamIndex, bool aReceive) {
     int index_inner = aStreamIndex * 2 + (aReceive ? 0 : 1);
@@ -434,6 +431,42 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
 
   // The STS thread.
   nsCOMPtr<nsIEventTarget> mSTSThread;
+
+
+  // This little proxy hold a weak reference to a PeerConnectionImpl
+  // and informs it (if it still exists) when DTLS connects.
+  // This class ties its lifecycle to the TransportLayerDtls that
+  // it follows, ending its own existence when DTLS connects, errors
+  // or when it learns that the transport layer is going away
+  class DtlsObserver : public sigslot::has_slots<>
+  {
+   public:
+    static void Connect_s(const nsCOMPtr<nsIThread> aMainThread,
+                          const nsCOMPtr<nsIEventTarget> aStsThread,
+                          const std::string& aPcHandle,
+                          const mozilla::RefPtr<mozilla::TransportFlow> aFlow);
+
+   private:
+    DtlsObserver(const nsCOMPtr<nsIThread>& aMainThread,
+                 const nsCOMPtr<nsIEventTarget>& aStsThread,
+                 const std::string& aPcHandle)
+      : mMainThread(aMainThread)
+      , mStsThread(aStsThread)
+      , mPcHandle(aPcHandle)
+      , mDispatching(false) {}
+    ~DtlsObserver() {}
+
+    void StateChange_s(mozilla::TransportLayer* aFlow,
+                         mozilla::TransportLayer::State state);
+    void NotifyConnected_m(bool aPrivacyRequested);
+    void Cleanup_s();
+    void SelfDestruct_s();
+
+    nsCOMPtr<nsIThread> mMainThread;
+    nsCOMPtr<nsIEventTarget> mStsThread;
+    std::string mPcHandle;
+    bool mDispatching;
+  };
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PeerConnectionMedia)
 };

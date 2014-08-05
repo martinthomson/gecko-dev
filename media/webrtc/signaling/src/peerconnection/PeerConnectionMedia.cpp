@@ -533,41 +533,95 @@ PeerConnectionMedia::IceStreamReady(NrIceMediaStream *aStream)
   CSFLogDebug(logTag, "%s: %s", __FUNCTION__, aStream->name().c_str());
 }
 
-
-void
-PeerConnectionMedia::DtlsConnected(TransportLayer *dtlsLayer,
-                                   TransportLayer::State state)
-{
-  dtlsLayer->SignalStateChange.disconnect(this);
-
-  bool privacyRequested = false;
-  // TODO (Bug 952678) set privacy mode, ask the DTLS layer about that
-  GetMainThread()->Dispatch(
-    WrapRunnable(nsRefPtr<PeerConnectionImpl>(mParent),
-                 &PeerConnectionImpl::SetDtlsConnected, privacyRequested),
-    NS_DISPATCH_NORMAL);
-}
-
 void
 PeerConnectionMedia::AddTransportFlow(int aIndex, bool aRtcp,
-                                      const RefPtr<TransportFlow> &aFlow)
+                                      const mozilla::RefPtr<TransportFlow> &aFlow)
 {
+  ASSERT_ON_THREAD(mMainThread);
+
   int index_inner = aIndex * 2 + (aRtcp ? 1 : 0);
 
   MOZ_ASSERT(!mTransportFlows[index_inner]);
   mTransportFlows[index_inner] = aFlow;
 
   GetSTSThread()->Dispatch(
-    WrapRunnable(this, &PeerConnectionMedia::ConnectDtlsListener_s, aFlow),
+    WrapRunnableNM(&PeerConnectionMedia::DtlsObserver::Connect_s,
+                   GetMainThread(), GetSTSThread(),
+                   mParent->GetHandle(), mozilla::RefPtr<TransportFlow>(aFlow)),
     NS_DISPATCH_NORMAL);
 }
 
 void
-PeerConnectionMedia::ConnectDtlsListener_s(const RefPtr<TransportFlow>& aFlow)
+PeerConnectionMedia::DtlsObserver::Connect_s(
+  const nsCOMPtr<nsIThread> aMainThread,
+  const nsCOMPtr<nsIEventTarget> aStsThread,
+  const std::string& aPcHandle, const mozilla::RefPtr<TransportFlow> aFlow)
 {
+  ASSERT_ON_THREAD(aStsThread);
+
   TransportLayer* dtls = aFlow->GetLayer(TransportLayerDtls::ID());
   if (dtls) {
-    dtls->SignalStateChange.connect(this, &PeerConnectionMedia::DtlsConnected);
+    DtlsObserver* observer =
+      new DtlsObserver(aMainThread, aStsThread, aPcHandle);
+    dtls->SignalStateChange.connect(
+      observer, &PeerConnectionMedia::DtlsObserver::StateChange_s);
+    dtls->SignalDeleted.connect(
+      observer, &PeerConnectionMedia::DtlsObserver::SelfDestruct);
+  }
+}
+
+void
+PeerConnectionMedia::DtlsObserver::StateChange_s(
+  TransportLayer *dtlsLayer, TransportLayer::State state)
+{
+  if (state == TransportLayer::TS_OPEN) {
+    bool privacyRequested = false;
+    // Set the mDispatching flag so that a SignalDeleted that comes along
+    // doesn't kill this object before it finishes properly.
+    mDispatching = true;
+    // TODO (Bug 952678) set privacy mode, ask the DTLS layer about that
+    mMainThread->Dispatch(
+      WrapRunnable(this,
+                   &PeerConnectionMedia::DtlsObserver::NotifyConnected_m,
+                   privacyRequested),
+      NS_DISPATCH_NORMAL);
+  } else if (state == TransportLayer::TS_ERROR ||
+             state == TransportLayer::TS_CLOSED) {
+    SelfDestruct();
+  }
+}
+
+void
+PeerConnectionMedia::DtlsObserver::NotifyConnected_m(bool aPrivacyRequested)
+{
+  PeerConnectionWrapper pcWrapper(mPcHandle);
+  PeerConnectionImpl* pc = pcWrapper.impl();
+  if (pc) {
+    pc->SetDtlsConnected(aPrivacyRequested);
+  }
+  mStsThread->Dispatch(
+    WrapRunnable(this, &PeerConnectionMedia::DtlsObserver::Cleanup_s),
+    NS_DISPATCH_NORMAL);
+}
+
+void
+PeerConnectionMedia::DtlsObserver::Cleanup_s()
+{
+  // Clear the block that prevents self destruct
+  mDispatching = false;
+  SelfDestruct_s();
+}
+
+void
+PeerConnectionMedia::DtlsObserver::SelfDestruct_s()
+{
+  ASSERT_ON_THREAD(mStsThread);
+  // If this is called while we have an outstanding dispatch to main,
+  // then we have to stay open so that we're here when it calls back
+  if (!mDispatching) {
+    // The destructor cancels all the sigslot registrations
+    // which has to happen on the STS thread.
+    delete this;
   }
 }
 

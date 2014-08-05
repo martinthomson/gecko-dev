@@ -47,7 +47,9 @@ class TransportLayer : public sigslot::has_slots<> {
     flow_id_(),
     downward_(nullptr) {}
 
-  virtual ~TransportLayer() {}
+  virtual ~TransportLayer() {
+    SignalDeleted();
+  }
 
   // Called to initialize
   nsresult Init();  // Called by Insert() to set up -- do not override
@@ -79,6 +81,10 @@ class TransportLayer : public sigslot::has_slots<> {
   // Data received on the flow
   sigslot::signal3<TransportLayer*, const unsigned char *, size_t>
                          SignalPacketReceived;
+
+  // this one is called from the destructor
+  // it intentionally has no arguments to help avoid crashy-crashy
+  sigslot::signal0<> SignalDeleted;
 
   // Return the layer id for this layer
   virtual const std::string id() = 0;
