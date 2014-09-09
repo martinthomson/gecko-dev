@@ -10,6 +10,7 @@
 #define transportlayerdtls_h__
 
 #include <queue>
+#include <set>
 
 #include "sigslot.h"
 
@@ -67,6 +68,10 @@ class TransportLayerDtls : public TransportLayer {
   void SetIdentity(const RefPtr<DtlsIdentity>& identity) {
     identity_ = identity;
   }
+  nsresult SetAlpn(const std::set<std::string>& allowedAlpn,
+                   const std::string& alpnDefault);
+  std::string GetNegotiatedAlpn() const { return alpn_; }
+
   nsresult SetVerificationAllowAll();
   nsresult SetVerificationDigest(const std::string digest_algorithm,
                                  const unsigned char *digest_value,
@@ -133,6 +138,8 @@ class TransportLayerDtls : public TransportLayer {
   bool SetupCipherSuites(PRFileDesc* ssl_fd) const;
   void Handshake();
 
+  bool CheckAlpn();
+
   static SECStatus GetClientAuthDataHook(void *arg, PRFileDesc *fd,
                                          CERTDistNames *caNames,
                                          CERTCertificate **pRetCert,
@@ -151,6 +158,12 @@ class TransportLayerDtls : public TransportLayer {
                         CERTCertificate *cert);
 
   RefPtr<DtlsIdentity> identity_;
+  // what ALPN identifiers are permitted
+  std::set<std::string> alpnAllowed_;
+  // what ALPN identifier is used if ALPN is not supported
+  // the empty string indicates that ALPN is required
+  std::string alpnDefault_;
+  std::string alpn_; // what ALPN string was negotiated
   std::vector<uint16_t> srtp_ciphers_;
 
   Role role_;

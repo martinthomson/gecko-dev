@@ -44,6 +44,7 @@ static PRDescIdentity transport_layer_identity = PR_INVALID_IO_LAYER;
   MOZ_ASSERT(false);                                            \
   PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0)
 
+#define MAX_ALPN_LENGTH 255
 
 // We need to adapt the NSPR/libssl model to the TransportFlow model.
 // The former wants pull semantics and TransportFlow wants push.
@@ -388,6 +389,22 @@ void TransportLayerDtls::WasInserted() {
 }
 
 
+// Set the permitted and default ALPN identifiers.
+// The default is here to allow for peers that don't want to negotiate ALPN
+// in that case, the default string will be reported from GetNegotiatedAlpn().
+// Setting the default to the empty string causes the transport layer to fail
+// if ALPN is not negotiated.
+nsresult TransportLayerDtls::SetAlpn(
+  const std::set<std::string>& alpnAllowed,
+  const std::string& alpnDefault) {
+
+  alpnAllowed_ = alpnAllowed;
+  alpnDefault_ = alpnDefault;
+
+  return NS_OK;
+}
+
+
 nsresult TransportLayerDtls::SetVerificationAllowAll() {
   // Defensive programming
   if (verification_mode_ != VERIFY_UNSET)
@@ -552,6 +569,18 @@ bool TransportLayerDtls::Setup() {
     return false;
   }
 
+  rv = SSL_OptionSet(ssl_fd, SSL_ENABLE_NPN, PR_FALSE);
+  if (rv != SECSuccess) {
+    MOZ_MTLOG(ML_ERROR, "Couldn't disable NPN");
+    return false;
+  }
+
+  rv = SSL_OptionSet(ssl_fd, SSL_ENABLE_ALPN, PR_TRUE);
+  if (rv != SECSuccess) {
+    MOZ_MTLOG(ML_ERROR, "Couldn't enable ALPN");
+    return false;
+  }
+
   if (!SetupCipherSuites(ssl_fd)) {
     return false;
   }
@@ -562,6 +591,24 @@ bool TransportLayerDtls::Setup() {
   if (rv != SECSuccess) {
     MOZ_MTLOG(ML_ERROR, "Couldn't set certificate validation hook");
     return false;
+  }
+
+  if (!alpnAllowed_.empty()) {
+    unsigned char buf[MAX_ALPN_LENGTH];
+    size_t i = 0;
+    for (auto tag = alpnAllowed_.begin();
+         tag != alpnAllowed_.end(); ++tag) {
+      MOZ_ASSERT(tag->length() <= 0xff, "ALPN tag too long");
+      MOZ_ASSERT(i + 1 + tag->length() < MAX_ALPN_LENGTH, "ALPN too long");
+      buf[i++] = tag->length();
+      memcpy(buf + i, tag->c_str(), tag->length());
+      i += tag->length();
+    }
+    rv = SSL_SetNextProtoNego(ssl_fd, buf, i);
+    if (rv != SECSuccess) {
+      MOZ_MTLOG(ML_ERROR, "Couldn't set ALPN string");
+      return false;
+    }
   }
 
   // Now start the handshake
@@ -770,11 +817,20 @@ void TransportLayerDtls::Handshake() {
   if (rv == SECSuccess) {
     MOZ_MTLOG(ML_NOTICE,
               LAYER_INFO << "****** SSL handshake completed ******");
+
     if (!cert_ok_) {
       MOZ_MTLOG(ML_ERROR, LAYER_INFO << "Certificate check never occurred");
       TL_SET_STATE(TS_ERROR);
       return;
     }
+    if (!CheckAlpn()) {
+      TL_SET_STATE(TS_ERROR);
+      // Close the socket here, because failure to negotiate the correct
+      // ALPN label doesn't result in a fatal error with the DTLS socket.
+      PR_Close(ssl_fd_);
+      return;
+    }
+
     TL_SET_STATE(TS_OPEN);
   } else {
     int32_t err = PR_GetError();
@@ -805,6 +861,51 @@ void TransportLayerDtls::Handshake() {
     }
   }
 }
+
+// checks if ALPN was negotiated correctly
+// return false if it wasn't
+// after this returns successfully, alpn_ will be set to the negotiated protocol
+bool TransportLayerDtls::CheckAlpn() {
+  if (alpnAllowed_.empty()) {
+    return true;
+  }
+
+  SSLNextProtoState alpnState;
+  char chosenAlpn[255];
+  unsigned int chosenAlpnLen;
+  SECStatus rv = SSL_GetNextProto(ssl_fd_, &alpnState,
+                                  reinterpret_cast<unsigned char*>(chosenAlpn),
+                                  &chosenAlpnLen, 255);
+  if (rv != SECSuccess) {
+    MOZ_MTLOG(ML_ERROR, LAYER_INFO << "ALPN error");
+    return false;
+  }
+  if (alpnState == SSL_NEXT_PROTO_NO_OVERLAP) {
+    MOZ_MTLOG(ML_ERROR, LAYER_INFO << "error in ALPN selection callback");
+    return false;
+  }
+  if (alpnState == SSL_NEXT_PROTO_NO_SUPPORT) {
+    MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "ALPN not negotiated, "
+              << (alpnDefault_.empty() ? "failing" : "selecting default"));
+    alpn_ = alpnDefault_;
+    return !alpn_.empty();
+  }
+
+  // NSS won't null terminate the ALPN string for us
+  // TODO handle non-unicode strings
+  std::string chosen(chosenAlpn, chosenAlpnLen);
+  MOZ_MTLOG(ML_NOTICE, LAYER_INFO << "Selected ALPN string: " << chosen);
+  if (alpnAllowed_.find(chosen) == alpnAllowed_.end()) {
+    MOZ_MTLOG(ML_ERROR, LAYER_INFO << "Bad ALPN string: " << chosen);
+    for (auto i = alpnAllowed_.begin(); i != alpnAllowed_.end(); ++i) {
+      MOZ_MTLOG(ML_INFO, LAYER_INFO << "Permitted ALPN: " << *i);
+    }
+    return false;
+  }
+  alpn_ = chosen;
+  return true;
+}
+
 
 void TransportLayerDtls::PacketReceived(TransportLayer* layer,
                                         const unsigned char *data,

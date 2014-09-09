@@ -2696,6 +2696,20 @@ vcmCreateTransportFlow(sipcc::PeerConnectionImpl *pc, int level, bool rtcp,
       return nullptr;
     }
 
+    std::set<std::string> alpn;
+    std::string alpnDefault = "";
+    alpn.insert("c-webrtc");
+    if (!pc->PrivacyRequested()) {
+     // only allow a default if we're not isolating streams
+      alpnDefault = "webrtc";
+      alpn.insert(alpnDefault);
+    }
+    res = dtls->SetAlpn(alpn, alpnDefault);
+    if (NS_FAILED(res)) {
+      CSFLogError(logTag, "Couldn't set ALPN");
+      return nullptr;
+    }
+
     nsAutoPtr<std::queue<TransportLayer *> > layers(new std::queue<TransportLayer *>);
     layers->push(ice.forget());
     layers->push(dtls.forget());
