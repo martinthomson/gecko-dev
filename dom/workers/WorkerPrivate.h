@@ -233,7 +233,8 @@ private:
 
   // Only touched on the parent thread (currently this is always the main
   // thread as SharedWorkers are always top-level).
-  nsDataHashtable<nsUint64HashKey, SharedWorker*> mSharedWorkers;
+  nsTArray<nsRefPtr<SharedWorker>> mSharedWorkers;
+  nsDataHashtable<nsUint64HashKey, MessagePort*> mSharedWorkerPorts;
 
   uint64_t mBusyCount;
   uint64_t mMessagePortSerial;
@@ -426,6 +427,14 @@ public:
 
   void
   UnregisterSharedWorker(JSContext* aCx, SharedWorker* aSharedWorker);
+
+  bool
+  RegisterMessagePort(JSContext* aCx, MessagePort* aMessagePort,
+                      bool aInsertEvent = false);
+
+  void
+  UnregisterMessagePort(JSContext* aCx, MessagePort* aMessagePort,
+                        bool aInsertEvent = false);
 
   void
   BroadcastErrorToSharedWorkers(JSContext* aCx,
@@ -690,7 +699,7 @@ public:
   GetAllSharedWorkers(nsTArray<nsRefPtr<SharedWorker>>& aSharedWorkers);
 
   void
-  CloseSharedWorkersForWindow(nsPIDOMWindow* aWindow);
+  CloseSharedWorkersForWindow(JSContext* aCx, nsPIDOMWindow* aWindow);
 
   void
   RegisterHostObjectURI(const nsACString& aURI);
@@ -1026,7 +1035,10 @@ public:
   }
 
   bool
-  ConnectMessagePort(JSContext* aCx, uint64_t aMessagePortSerial);
+  InsertMessagePort(JSContext* aCx, uint64_t aMessagePortSerial);
+
+  void
+  ConnectMessagePort(nsRefPtr<MessagePort>& aMessagePort);
 
   void
   DisconnectMessagePort(uint64_t aMessagePortSerial);

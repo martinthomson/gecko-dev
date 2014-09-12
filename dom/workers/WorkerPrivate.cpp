@@ -1792,7 +1792,7 @@ private:
   WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) MOZ_OVERRIDE
   {
     if (mConnect) {
-      return aWorkerPrivate->ConnectMessagePort(aCx, mMessagePortSerial);
+      return aWorkerPrivate->InsertMessagePort(aCx, mMessagePortSerial);
     }
 
     aWorkerPrivate->DisconnectMessagePort(mMessagePortSerial);
@@ -2423,11 +2423,11 @@ WorkerPrivateParent<Derived>::Suspend(JSContext* aCx, nsPIDOMWindow* aWindow)
   AssertIsOnParentThread();
   MOZ_ASSERT(aCx);
 
-  // Shared workers are only suspended if all of their owning documents are
-  // suspended.
+  // Shared workers are only suspended if all the documents owning the parent
+  // end of their message ports are suspended.
   if (IsSharedWorker() || IsServiceWorker()) {
     AssertIsOnMainThread();
-    MOZ_ASSERT(mSharedWorkers.Count());
+    MOZ_ASSERT(mSharedWorkerPorts.Count());
 
     struct Closure
     {
@@ -2443,26 +2443,27 @@ WorkerPrivateParent<Derived>::Suspend(JSContext* aCx, nsPIDOMWindow* aWindow)
 
       static PLDHashOperator
       Suspend(const uint64_t& aKey,
-              SharedWorker* aSharedWorker,
+              MessagePort* aMessagePort,
               void* aClosure)
       {
         AssertIsOnMainThread();
-        MOZ_ASSERT(aSharedWorker);
+        MOZ_ASSERT(aMessagePort);
+        MOZ_ASSERT(aMessagePort->Worker());
         MOZ_ASSERT(aClosure);
+
+        // Calling Suspend() may change the refcount, ensure that the worker
+        // outlives this call.
+        nsRefPtr<SharedWorker> sharedWorker = aMessagePort->Worker();
 
         auto closure = static_cast<Closure*>(aClosure);
 
-        if (closure->mWindow && aSharedWorker->GetOwner() == closure->mWindow) {
-          // Calling Suspend() may change the refcount, ensure that the worker
-          // outlives this call.
-          nsRefPtr<SharedWorker> kungFuDeathGrip = aSharedWorker;
-
-          aSharedWorker->Suspend();
+        if (closure->mWindow && sharedWorker->GetOwner() == closure->mWindow) {
+          sharedWorker->Suspend();
         } else {
-          MOZ_ASSERT_IF(aSharedWorker->GetOwner() && closure->mWindow,
-                        !SameCOMIdentity(aSharedWorker->GetOwner(),
+          MOZ_ASSERT_IF(sharedWorker->GetOwner() && closure->mWindow,
+                        !SameCOMIdentity(sharedWorker->GetOwner(),
                                          closure->mWindow));
-          if (!aSharedWorker->IsSuspended()) {
+          if (!sharedWorker->IsSuspended()) {
             closure->mAllSuspended = false;
           }
         }
@@ -2472,7 +2473,7 @@ WorkerPrivateParent<Derived>::Suspend(JSContext* aCx, nsPIDOMWindow* aWindow)
 
     Closure closure(aWindow);
 
-    mSharedWorkers.EnumerateRead(Closure::Suspend, &closure);
+    mSharedWorkerPorts.EnumerateRead(Closure::Suspend, &closure);
 
     if (!closure.mAllSuspended || mParentSuspended) {
       return true;
@@ -2508,10 +2509,11 @@ WorkerPrivateParent<Derived>::Resume(JSContext* aCx, nsPIDOMWindow* aWindow)
   MOZ_ASSERT(aCx);
   MOZ_ASSERT_IF(IsDedicatedWorker(), mParentSuspended);
 
-  // Shared workers are resumed if any of their owning documents are resumed.
+  // Shared workers are resumed if any of the documents owning remote ends of
+  // their message ports are resumed.
   if (IsSharedWorker() || IsServiceWorker()) {
     AssertIsOnMainThread();
-    MOZ_ASSERT(mSharedWorkers.Count());
+    MOZ_ASSERT(mSharedWorkerPorts.Count());
 
     struct Closure
     {
@@ -2527,27 +2529,28 @@ WorkerPrivateParent<Derived>::Resume(JSContext* aCx, nsPIDOMWindow* aWindow)
 
       static PLDHashOperator
       Resume(const uint64_t& aKey,
-              SharedWorker* aSharedWorker,
-              void* aClosure)
+             MessagePort* aMessagePort,
+             void* aClosure)
       {
         AssertIsOnMainThread();
-        MOZ_ASSERT(aSharedWorker);
+        MOZ_ASSERT(aMessagePort);
         MOZ_ASSERT(aClosure);
+
+        // Calling Resume() may change the refcount, ensure that the worker
+        // outlives this call.
+        nsRefPtr<SharedWorker> sharedWorker = aMessagePort->Worker();
 
         auto closure = static_cast<Closure*>(aClosure);
 
-        if (closure->mWindow && aSharedWorker->GetOwner() == closure->mWindow) {
-          // Calling Resume() may change the refcount, ensure that the worker
-          // outlives this call.
-          nsRefPtr<SharedWorker> kungFuDeathGrip = aSharedWorker;
+        if (closure->mWindow && sharedWorker->GetOwner() == closure->mWindow) {
 
-          aSharedWorker->Resume();
+          sharedWorker->Resume();
           closure->mAnyRunning = true;
         } else {
-          MOZ_ASSERT_IF(aSharedWorker->GetOwner() && closure->mWindow,
-                        !SameCOMIdentity(aSharedWorker->GetOwner(),
+          MOZ_ASSERT_IF(sharedWorker->GetOwner() && closure->mWindow,
+                        !SameCOMIdentity(sharedWorker->GetOwner(),
                                          closure->mWindow));
-          if (!aSharedWorker->IsSuspended()) {
+          if (!sharedWorker->IsSuspended()) {
             closure->mAnyRunning = true;
           }
         }
@@ -2557,7 +2560,7 @@ WorkerPrivateParent<Derived>::Resume(JSContext* aCx, nsPIDOMWindow* aWindow)
 
     Closure closure(aWindow);
 
-    mSharedWorkers.EnumerateRead(Closure::Resume, &closure);
+    mSharedWorkerPorts.EnumerateRead(Closure::Resume, &closure);
 
     if (!closure.mAnyRunning || !mParentSuspended) {
       return true;
@@ -2807,14 +2810,11 @@ WorkerPrivateParent<Derived>::DispatchMessageEventToMessagePort(
   nsTArray<nsCOMPtr<nsISupports>> clonedObjects;
   clonedObjects.SwapElements(aClonedObjects);
 
-  SharedWorker* sharedWorker;
-  if (!mSharedWorkers.Get(aMessagePortSerial, &sharedWorker)) {
+  MessagePort* port;
+  if (!mSharedWorkerPorts.Get(aMessagePortSerial, &port)) {
     // SharedWorker has already been unregistered?
     return true;
   }
-
-  nsRefPtr<MessagePort> port = sharedWorker->Port();
-  NS_ASSERTION(port, "SharedWorkers always have a port!");
 
   if (port->IsClosed()) {
     return true;
@@ -3057,31 +3057,16 @@ WorkerPrivate::OfflineStatusChangeEventInternal(JSContext* aCx, bool aIsOffline)
 template <class Derived>
 bool
 WorkerPrivateParent<Derived>::RegisterSharedWorker(JSContext* aCx,
-                                                   SharedWorker* aSharedWorker)
+                                                  SharedWorker* aSharedWorker)
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(aSharedWorker);
   MOZ_ASSERT(IsSharedWorker() || IsServiceWorker());
-  MOZ_ASSERT(!mSharedWorkers.Get(aSharedWorker->Serial()));
+  MOZ_ASSERT(!mSharedWorkers.Contains(aSharedWorker));
 
-  if (IsSharedWorker()) {
-    nsRefPtr<MessagePortRunnable> runnable =
-      new MessagePortRunnable(ParentAsWorkerPrivate(), aSharedWorker->Serial(),
-                              true);
-    if (!runnable->Dispatch(aCx)) {
-      return false;
-    }
-  }
-
-  mSharedWorkers.Put(aSharedWorker->Serial(), aSharedWorker);
-
-  // If there were other SharedWorker objects attached to this worker then they
-  // may all have been suspended and this worker would need to be resumed.
-  if (mSharedWorkers.Count() > 1 && !Resume(aCx, nullptr)) {
-    return false;
-  }
-
-  return true;
+  mSharedWorkers.AppendElement(aSharedWorker);
+  nsRefPtr<MessagePort> port = aSharedWorker->Port();
+  return RegisterMessagePort(aCx, port, IsSharedWorker());
 }
 
 template <class Derived>
@@ -3093,21 +3078,73 @@ WorkerPrivateParent<Derived>::UnregisterSharedWorker(
   AssertIsOnMainThread();
   MOZ_ASSERT(aSharedWorker);
   MOZ_ASSERT(IsSharedWorker() || IsServiceWorker());
-  MOZ_ASSERT(mSharedWorkers.Get(aSharedWorker->Serial()));
+  MOZ_ASSERT(mSharedWorkers.Contains(aSharedWorker));
 
-  nsRefPtr<MessagePortRunnable> runnable =
-    new MessagePortRunnable(ParentAsWorkerPrivate(), aSharedWorker->Serial(),
-                            false);
-  if (!runnable->Dispatch(aCx)) {
-    JS_ReportPendingException(aCx);
+  mSharedWorkers.RemoveElement(aSharedWorker);
+  // Note: this is asymmetric with the Register method; any message ports should
+  // be unregistered by their Close() method, which is invoked *before* this
+}
+
+template <class Derived>
+bool
+WorkerPrivateParent<Derived>::RegisterMessagePort(JSContext* aCx,
+                                                  MessagePort* aMessagePort,
+                                                  bool aInsertEvent /* = false */)
+{
+  AssertIsOnMainThread();
+  MOZ_ASSERT(aMessagePort);
+  MOZ_ASSERT(aMessagePort->Worker());
+  MOZ_ASSERT(IsSharedWorker() || IsServiceWorker());
+  MOZ_ASSERT(!mSharedWorkerPorts.Get(aMessagePort->Serial()));
+
+  if (aInsertEvent) {
+    nsRefPtr<MessagePortRunnable> runnable =
+      new MessagePortRunnable(ParentAsWorkerPrivate(), aMessagePort->Serial(),
+                              true);
+    if (!runnable->Dispatch(aCx)) {
+      return false;
+    }
   }
 
-  mSharedWorkers.Remove(aSharedWorker->Serial());
+  mSharedWorkerPorts.Put(aMessagePort->Serial(), aMessagePort);
+
+  // If there were other MessagePorts attached to this worker then they
+  // may all have been suspended and this worker would need to be resumed.
+  if (mSharedWorkerPorts.Count() > 1 && !Resume(aCx, nullptr)) {
+    return false;
+  }
+
+  return true;
+}
+
+template <class Derived>
+void
+WorkerPrivateParent<Derived>::UnregisterMessagePort(
+                                                    JSContext* aCx,
+                                                    MessagePort* aMessagePort,
+                                                    bool aInsertEvent /* = false */)
+{
+  AssertIsOnMainThread();
+  MOZ_ASSERT(aMessagePort);
+  MOZ_ASSERT(aMessagePort->Worker());
+  MOZ_ASSERT(IsSharedWorker() || IsServiceWorker());
+  MOZ_ASSERT(mSharedWorkerPorts.Get(aMessagePort->Serial()));
+
+  if (aInsertEvent) {
+    nsRefPtr<MessagePortRunnable> runnable =
+      new MessagePortRunnable(ParentAsWorkerPrivate(), aMessagePort->Serial(),
+                              false);
+    if (!runnable->Dispatch(aCx)) {
+      JS_ReportPendingException(aCx);
+    }
+  }
+
+  mSharedWorkerPorts.Remove(aMessagePort->Serial());
 
   // If there are still SharedWorker objects attached to this worker then they
   // may all be suspended and this worker would need to be suspended. Otherwise,
   // if that was the last SharedWorker then it's time to cancel this worker.
-  if (mSharedWorkers.Count()) {
+  if (mSharedWorkerPorts.Count()) {
     if (!Suspend(aCx, nullptr)) {
       JS_ReportPendingException(aCx);
     }
@@ -3245,34 +3282,17 @@ WorkerPrivateParent<Derived>::GetAllSharedWorkers(
   AssertIsOnMainThread();
   MOZ_ASSERT(IsSharedWorker() || IsServiceWorker());
 
-  struct Helper
-  {
-    static PLDHashOperator
-    Collect(const uint64_t& aKey,
-            SharedWorker* aSharedWorker,
-            void* aClosure)
-    {
-      AssertIsOnMainThread();
-      MOZ_ASSERT(aSharedWorker);
-      MOZ_ASSERT(aClosure);
-
-      auto array = static_cast<nsTArray<nsRefPtr<SharedWorker>>*>(aClosure);
-      array->AppendElement(aSharedWorker);
-
-      return PL_DHASH_NEXT;
-    }
-  };
-
   if (!aSharedWorkers.IsEmpty()) {
     aSharedWorkers.Clear();
   }
 
-  mSharedWorkers.EnumerateRead(Helper::Collect, &aSharedWorkers);
+  aSharedWorkers.AppendElements(mSharedWorkers);
 }
 
 template <class Derived>
 void
 WorkerPrivateParent<Derived>::CloseSharedWorkersForWindow(
+                                                         JSContext* aCx,
                                                          nsPIDOMWindow* aWindow)
 {
   AssertIsOnMainThread();
@@ -3282,7 +3302,7 @@ WorkerPrivateParent<Derived>::CloseSharedWorkersForWindow(
   struct Closure
   {
     nsPIDOMWindow* mWindow;
-    nsAutoTArray<nsRefPtr<SharedWorker>, 10> mSharedWorkers;
+    nsAutoTArray<nsRefPtr<MessagePort>, 10> mPorts;
 
     explicit Closure(nsPIDOMWindow* aWindow)
     : mWindow(aWindow)
@@ -3293,20 +3313,21 @@ WorkerPrivateParent<Derived>::CloseSharedWorkersForWindow(
 
     static PLDHashOperator
     Collect(const uint64_t& aKey,
-            SharedWorker* aSharedWorker,
+            MessagePort* aMessagePort,
             void* aClosure)
     {
       AssertIsOnMainThread();
-      MOZ_ASSERT(aSharedWorker);
+      MOZ_ASSERT(aMessagePort);
       MOZ_ASSERT(aClosure);
 
       auto closure = static_cast<Closure*>(aClosure);
       MOZ_ASSERT(closure->mWindow);
 
-      if (aSharedWorker->GetOwner() == closure->mWindow) {
-        closure->mSharedWorkers.AppendElement(aSharedWorker);
+      nsRefPtr<SharedWorker> sharedWorker = aMessagePort->Worker();
+      if (sharedWorker->GetOwner() == closure->mWindow) {
+        closure->mPorts.AppendElement(aMessagePort);
       } else {
-        MOZ_ASSERT(!SameCOMIdentity(aSharedWorker->GetOwner(),
+        MOZ_ASSERT(!SameCOMIdentity(sharedWorker->GetOwner(),
                                     closure->mWindow));
       }
 
@@ -3314,12 +3335,33 @@ WorkerPrivateParent<Derived>::CloseSharedWorkersForWindow(
     }
   };
 
+
+  // First close all the ports
   Closure closure(aWindow);
+  mSharedWorkerPorts.EnumerateRead(Closure::Collect, &closure);
+  nsAutoTArray<nsRefPtr<SharedWorker>, 10> workers;
+  for (uint32_t index = 0; index < closure.mPorts.Length(); index++) {
+    nsRefPtr<MessagePort>& port = closure.mPorts[index];
+    port->Close();
 
-  mSharedWorkers.EnumerateRead(Closure::Collect, &closure);
+    nsRefPtr<SharedWorker> worker = port->Worker();
+    if (worker && port->Serial() == worker->Serial()) {
+      // primary port
+      workers.AppendElement(worker);
+    } else {
+      // secondary ports need to be deregistered
+      UnregisterMessagePort(aCx, port);
+    }
+  }
 
-  for (uint32_t index = 0; index < closure.mSharedWorkers.Length(); index++) {
-    closure.mSharedWorkers[index]->Close();
+  // Then close all the workers
+  for (size_t index = 0; index < workers.Length(); ++index) {
+    nsRefPtr<SharedWorker>& worker = workers[index];
+    if (worker->GetOwner() == aWindow) {
+      worker->Close();
+    } else {
+      MOZ_ASSERT(!SameCOMIdentity(worker->GetOwner(), aWindow));
+    }
   }
 }
 
@@ -5785,12 +5827,9 @@ WorkerPrivate::EndCTypesCall()
 }
 
 bool
-WorkerPrivate::ConnectMessagePort(JSContext* aCx, uint64_t aMessagePortSerial)
+WorkerPrivate::InsertMessagePort(JSContext* aCx, uint64_t aMessagePortSerial)
 {
   AssertIsOnWorkerThread();
-
-  NS_ASSERTION(!mWorkerPorts.GetWeak(aMessagePortSerial),
-               "Already have this port registered!");
 
   WorkerGlobalScope* globalScope = GlobalScope();
 
@@ -5824,13 +5863,22 @@ WorkerPrivate::ConnectMessagePort(JSContext* aCx, uint64_t aMessagePortSerial)
     new MessagePortList(static_cast<nsIDOMEventTarget*>(globalScope), ports);
   event->SetPorts(portList);
 
-  mWorkerPorts.Put(aMessagePortSerial, port);
+  ConnectMessagePort(port);
 
   nsCOMPtr<nsIDOMEvent> domEvent = do_QueryObject(event);
 
   nsEventStatus dummy = nsEventStatus_eIgnore;
   globalScope->DispatchDOMEvent(nullptr, domEvent, nullptr, &dummy);
   return true;
+}
+
+void
+WorkerPrivate::ConnectMessagePort(nsRefPtr<MessagePort>& aMessagePort)
+{
+  AssertIsOnWorkerThread();
+  NS_ASSERTION(!mWorkerPorts.GetWeak(aMessagePort->Serial()),
+               "Already have this port registered!");
+  mWorkerPorts.Put(aMessagePort->Serial(), aMessagePort);
 }
 
 void

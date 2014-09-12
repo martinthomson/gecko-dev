@@ -107,7 +107,7 @@ MessagePort::PostMessageMoz(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   }
 
   if (mSharedWorker) {
-    mSharedWorker->PostMessage(aCx, aMessage, aTransferable, aRv);
+    mSharedWorker->PostMessage(aCx, Serial(), aMessage, aTransferable, aRv);
   }
   else {
     mWorkerPrivate->PostMessageToParentMessagePort(aCx, Serial(), aMessage,
@@ -215,6 +215,11 @@ MessagePort::CloseInternal()
 
   if (!mStarted) {
     mQueuedEvents.Clear();
+  }
+
+  if (mWorkerPrivate) {
+    AutoSafeJSContext cx;
+    mWorkerPrivate->UnregisterMessagePort(cx, this);
   }
 
   mSharedWorker = nullptr;

@@ -38,6 +38,10 @@ class MessagePort MOZ_FINAL : public mozilla::dom::MessagePortBase
   bool mStarted;
 
 public:
+  MessagePort(nsPIDOMWindow* aWindow, SharedWorker* aSharedWorker,
+              uint64_t aSerial);
+  MessagePort(WorkerPrivate* aWorkerPrivate, uint64_t aSerial);
+
   static bool
   PrefEnabled();
 
@@ -56,6 +60,12 @@ public:
   Serial() const
   {
     return mSerial;
+  }
+
+  nsRefPtr<SharedWorker>
+  Worker() const
+  {
+    return mSharedWorker;
   }
 
   void
@@ -93,12 +103,8 @@ public:
   AssertCorrectThread() const { }
 #endif
 
-private:
-  // This class can only be created by SharedWorker or WorkerPrivate.
-  MessagePort(nsPIDOMWindow* aWindow, SharedWorker* aSharedWorker,
-              uint64_t aSerial);
-  MessagePort(WorkerPrivate* aWorkerPrivate, uint64_t aSerial);
 
+private:
   // This class is reference-counted and will be destroyed from Release().
   ~MessagePort();
 
