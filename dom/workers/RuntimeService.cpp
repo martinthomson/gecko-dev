@@ -65,6 +65,7 @@
 #include "SharedWorker.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
+#include "WorkerScope.h"
 
 #ifdef ENABLE_TESTS
 #include "BackgroundChildImpl.h"
@@ -2190,6 +2191,47 @@ RuntimeService::ResumeWorkersForWindow(nsPIDOMWindow* aWindow)
   }
 }
 
+
+nsRefPtr<WorkerGlobalScopeFactory>
+SharedWorkerGlobalScopeFactory::instance = new SharedWorkerGlobalScopeFactory();
+
+
+already_AddRefed<WorkerGlobalScope>
+SharedWorkerGlobalScopeFactory::CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
+                                                  const nsACString& aWorkerName)
+{
+  aWorkerPrivate->AssertIsOnWorkerThread();
+  nsRefPtr<WorkerGlobalScope> scope;
+  scope = new SharedWorkerGlobalScope(aWorkerPrivate, aWorkerName);
+  return scope.forget();
+}
+
+nsresult
+RuntimeService::CreateSharedWorker(const GlobalObject& aGlobal,
+                   const nsAString& aScriptURL,
+                   const nsACString& aName,
+                   nsRefPtr<WorkerGlobalScopeFactory>& aGlobalScopeFactory,
+                   SharedWorker** aSharedWorker)
+{
+  nsRefPtr<WorkerGlobalScopeFactory> scopeFactory = aGlobalScopeFactory
+    ? aGlobalScopeFactory : SharedWorkerGlobalScopeFactory::instance;
+  return CreateSharedWorkerInternal(aGlobal, aScriptURL, aName, WorkerTypeShared,
+                                    scopeFactory, aSharedWorker);
+}
+
+nsRefPtr<WorkerGlobalScopeFactory>
+ServiceWorkerGlobalScopeFactory::instance = new ServiceWorkerGlobalScopeFactory();
+
+already_AddRefed<WorkerGlobalScope>
+ServiceWorkerGlobalScopeFactory::CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
+                                                   const nsACString& aWorkerName)
+{
+  aWorkerPrivate->AssertIsOnWorkerThread();
+  nsRefPtr<WorkerGlobalScope> scope;
+  scope = new ServiceWorkerGlobalScope(aWorkerPrivate, aWorkerName);
+  return scope.forget();
+}
+
 nsresult
 RuntimeService::CreateServiceWorker(const GlobalObject& aGlobal,
                                     const nsAString& aScriptURL,
@@ -2204,6 +2246,7 @@ RuntimeService::CreateServiceWorker(const GlobalObject& aGlobal,
   nsRefPtr<SharedWorker> sharedWorker;
   rv = CreateSharedWorkerInternal(aGlobal, aScriptURL, aScope,
                                   WorkerTypeService,
+                                  ServiceWorkerGlobalScopeFactory::instance,
                                   getter_AddRefs(sharedWorker));
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -2222,15 +2265,15 @@ RuntimeService::CreateServiceWorker(const GlobalObject& aGlobal,
 
 nsresult
 RuntimeService::CreateServiceWorkerFromLoadInfo(JSContext* aCx,
-                                               WorkerPrivate::LoadInfo aLoadInfo,
-                                               const nsAString& aScriptURL,
-                                               const nsACString& aScope,
-                                               ServiceWorker** aServiceWorker)
+                                                WorkerPrivate::LoadInfo aLoadInfo,
+                                                const nsAString& aScriptURL,
+                                                const nsACString& aScope,
+                                                ServiceWorker** aServiceWorker)
 {
-
   nsRefPtr<SharedWorker> sharedWorker;
   nsresult rv = CreateSharedWorkerFromLoadInfo(aCx, aLoadInfo, aScriptURL, aScope,
                                                WorkerTypeService,
+                                               ServiceWorkerGlobalScopeFactory::instance,
                                                getter_AddRefs(sharedWorker));
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -2248,11 +2291,13 @@ RuntimeService::CreateServiceWorkerFromLoadInfo(JSContext* aCx,
 }
 
 nsresult
-RuntimeService::CreateSharedWorkerInternal(const GlobalObject& aGlobal,
-                                           const nsAString& aScriptURL,
-                                           const nsACString& aName,
-                                           WorkerType aType,
-                                           SharedWorker** aSharedWorker)
+RuntimeService::CreateSharedWorkerInternal(
+  const GlobalObject& aGlobal,
+  const nsAString& aScriptURL,
+  const nsACString& aName,
+  WorkerType aType,
+  nsRefPtr<WorkerGlobalScopeFactory>& aWorkerScopeFactory,
+  SharedWorker** aSharedWorker)
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(aType == WorkerTypeShared || aType == WorkerTypeService);
@@ -2268,16 +2313,18 @@ RuntimeService::CreateSharedWorkerInternal(const GlobalObject& aGlobal,
   NS_ENSURE_SUCCESS(rv, rv);
 
   return CreateSharedWorkerFromLoadInfo(cx, loadInfo, aScriptURL, aName, aType,
-                                        aSharedWorker);
+                                        aWorkerScopeFactory, aSharedWorker);
 }
 
 nsresult
-RuntimeService::CreateSharedWorkerFromLoadInfo(JSContext* aCx,
-                                               WorkerPrivate::LoadInfo aLoadInfo,
-                                               const nsAString& aScriptURL,
-                                               const nsACString& aName,
-                                               WorkerType aType,
-                                               SharedWorker** aSharedWorker)
+RuntimeService::CreateSharedWorkerFromLoadInfo(
+  JSContext* aCx,
+  WorkerPrivate::LoadInfo aLoadInfo,
+  const nsAString& aScriptURL,
+  const nsACString& aName,
+  WorkerType aType,
+  nsRefPtr<WorkerGlobalScopeFactory>& aWorkerScopeFactory,
+  SharedWorker** aSharedWorker)
 {
   AssertIsOnMainThread();
 
@@ -2314,7 +2361,8 @@ RuntimeService::CreateSharedWorkerFromLoadInfo(JSContext* aCx,
     ErrorResult rv;
     workerPrivate =
       WorkerPrivate::Constructor(aCx, aScriptURL, false,
-                                 aType, aName, &aLoadInfo, rv);
+                                 aType, aName, &aLoadInfo,
+                                 aWorkerScopeFactory, rv);
     NS_ENSURE_TRUE(workerPrivate, rv.ErrorCode());
 
     created = true;
