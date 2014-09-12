@@ -147,7 +147,7 @@ class SharedWorkerGlobalScope MOZ_FINAL : public WorkerGlobalScope
 
 public:
   SharedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate,
-                          const nsCString& aName);
+                          const nsACString& aName);
 
   virtual JSObject*
   WrapGlobalObject(JSContext* aCx) MOZ_OVERRIDE;
