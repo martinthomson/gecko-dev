@@ -148,7 +148,8 @@ SharedWorker::Close()
 }
 
 void
-SharedWorker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
+SharedWorker::PostMessage(JSContext* aCx, uint64_t aSerial,
+                          JS::Handle<JS::Value> aMessage,
                           const Optional<Sequence<JS::Value>>& aTransferable,
                           ErrorResult& aRv)
 {
@@ -156,8 +157,8 @@ SharedWorker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   MOZ_ASSERT(mWorkerPrivate);
   MOZ_ASSERT(mMessagePort);
 
-  mWorkerPrivate->PostMessageToMessagePort(aCx, mMessagePort->Serial(),
-                                           aMessage, aTransferable, aRv);
+  mWorkerPrivate->PostMessageToMessagePort(aCx, aSerial, aMessage,
+                                           aTransferable, aRv);
 }
 
 void
