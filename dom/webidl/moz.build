@@ -525,6 +525,8 @@ if CONFIG['MOZ_WEBRTC']:
     WEBIDL_FILES += [
         'DataChannel.webidl',
         'MediaStreamList.webidl',
+        'PeerConnectionIdpFactory.webidl',
+        'PeerConnectionIdpScope.webidl',
         'PeerConnectionImpl.webidl',
         'PeerConnectionImplEnums.webidl',
         'PeerConnectionObserver.webidl',
