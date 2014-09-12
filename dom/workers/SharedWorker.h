@@ -24,6 +24,7 @@ BEGIN_WORKERS_NAMESPACE
 class MessagePort;
 class RuntimeService;
 class WorkerPrivate;
+class WorkerGlobalScopeFactory;
 
 class SharedWorker MOZ_FINAL : public DOMEventTargetHelper
 {
@@ -45,7 +46,17 @@ public:
               const nsAString& aScriptURL, const Optional<nsAString>& aName,
               ErrorResult& aRv);
 
+<<<<<<< HEAD
   already_AddRefed<mozilla::dom::workers::MessagePort>
+=======
+  static already_AddRefed<SharedWorker>
+  Constructor(const GlobalObject& aGlobal, JSContext* aCx,
+              const nsAString& aScriptURL, const Optional<nsAString>& aName,
+              nsRefPtr<WorkerGlobalScopeFactory>& aGlobalScopeFactory,
+              ErrorResult& aRv);
+
+  already_AddRefed<MessagePort>
+>>>>>>> Bug XXXXXXX - Adding ability to create custom worker scopes
   Port();
 
   uint64_t

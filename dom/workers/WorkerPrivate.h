@@ -17,6 +17,7 @@
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "nsISupportsImpl.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
@@ -788,6 +789,19 @@ private:
   void NotifyIsEnabled(bool aIsEnabled);
 };
 
+class WorkerGlobalScopeFactory
+{
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WorkerGlobalScopeFactory)
+
+public:
+  // Called on the worker thread to create the scope
+  virtual already_AddRefed<WorkerGlobalScope>
+  CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
+                    const nsACString& aWorkerName) = 0;
+protected:
+  virtual ~WorkerGlobalScopeFactory() {}
+};
+
 class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
 {
   friend class WorkerPrivateParent<WorkerPrivate>;
@@ -867,6 +881,8 @@ class WorkerPrivate : public WorkerPrivateParent<WorkerPrivate>
   bool mPeriodicGCTimerRunning;
   bool mIdleGCTimerRunning;
   bool mWorkerScriptExecutedSuccessfully;
+  nsRefPtr<WorkerGlobalScopeFactory> mGlobalScopeFactory;
+
   bool mPreferences[WORKERPREF_COUNT];
   bool mOnLine;
 
@@ -882,12 +898,16 @@ public:
   Constructor(const GlobalObject& aGlobal, const nsAString& aScriptURL,
               bool aIsChromeWorker, WorkerType aWorkerType,
               const nsACString& aSharedWorkerName,
-              LoadInfo* aLoadInfo, ErrorResult& aRv);
+              LoadInfo* aLoadInfo,
+              nsRefPtr<WorkerGlobalScopeFactory>& aWorkerScopeFactory,
+              ErrorResult& aRv);
 
   static already_AddRefed<WorkerPrivate>
   Constructor(JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
               WorkerType aWorkerType, const nsACString& aSharedWorkerName,
-              LoadInfo* aLoadInfo, ErrorResult& aRv);
+              LoadInfo* aLoadInfo,
+              nsRefPtr<WorkerGlobalScopeFactory>& aWorkerScopeFactory,
+              ErrorResult& aRv);
 
   static bool
   WorkerAvailable(JSContext* /* unused */, JSObject* /* unused */);
@@ -1183,7 +1203,8 @@ private:
   WorkerPrivate(JSContext* aCx, WorkerPrivate* aParent,
                 const nsAString& aScriptURL, bool aIsChromeWorker,
                 WorkerType aWorkerType, const nsACString& aSharedWorkerName,
-                LoadInfo& aLoadInfo);
+                LoadInfo& aLoadInfo,
+                nsRefPtr<WorkerGlobalScopeFactory>& aGlobalScopeFactory);
 
   void
   ClearMainEventQueue(WorkerRanOrNot aRanOrNot);

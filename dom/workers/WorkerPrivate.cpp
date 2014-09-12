@@ -3755,7 +3755,8 @@ WorkerPrivate::WorkerPrivate(JSContext* aCx,
                              const nsAString& aScriptURL,
                              bool aIsChromeWorker, WorkerType aWorkerType,
                              const nsACString& aSharedWorkerName,
-                             LoadInfo& aLoadInfo)
+                             LoadInfo& aLoadInfo,
+                             nsRefPtr<WorkerGlobalScopeFactory>& aGlobalScopeFactory)
   : WorkerPrivateParent<WorkerPrivate>(aCx, aParent, aScriptURL,
                                        aIsChromeWorker, aWorkerType,
                                        aSharedWorkerName, aLoadInfo)
@@ -3775,6 +3776,7 @@ WorkerPrivate::WorkerPrivate(JSContext* aCx,
   , mPeriodicGCTimerRunning(false)
   , mIdleGCTimerRunning(false)
   , mWorkerScriptExecutedSuccessfully(false)
+  , mGlobalScopeFactory(aGlobalScopeFactory)
 {
   MOZ_ASSERT_IF(!IsDedicatedWorker(), !aSharedWorkerName.IsVoid());
   MOZ_ASSERT_IF(IsDedicatedWorker(), aSharedWorkerName.IsEmpty());
@@ -3795,6 +3797,25 @@ WorkerPrivate::~WorkerPrivate()
 {
 }
 
+class DedicatedWorkerGlobalScopeFactory MOZ_FINAL
+  : public WorkerGlobalScopeFactory
+{
+public:
+  static nsRefPtr<WorkerGlobalScopeFactory> instance;
+
+  virtual already_AddRefed<WorkerGlobalScope>
+  CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
+                    const nsACString& aWorkerName)
+  {
+    nsRefPtr<WorkerGlobalScope> scope;
+    scope = new DedicatedWorkerGlobalScope(aWorkerPrivate);
+    return scope.forget();
+  }
+};
+
+nsRefPtr<WorkerGlobalScopeFactory>
+DedicatedWorkerGlobalScopeFactory::instance = new DedicatedWorkerGlobalScopeFactory();
+
 // static
 already_AddRefed<WorkerPrivate>
 WorkerPrivate::Constructor(const GlobalObject& aGlobal,
@@ -3803,7 +3824,9 @@ WorkerPrivate::Constructor(const GlobalObject& aGlobal,
 {
   return WorkerPrivate::Constructor(aGlobal, aScriptURL, false,
                                     WorkerTypeDedicated, EmptyCString(),
-                                    nullptr, aRv);
+                                    nullptr,
+                                    DedicatedWorkerGlobalScopeFactory::instance,
+                                    aRv);
 }
 
 // static
@@ -3832,7 +3855,9 @@ ChromeWorkerPrivate::Constructor(const GlobalObject& aGlobal,
 {
   return WorkerPrivate::Constructor(aGlobal, aScriptURL, true,
                                     WorkerTypeDedicated, EmptyCString(),
-                                    nullptr, aRv)
+                                    nullptr,
+                                    DedicatedWorkerGlobalScopeFactory::instance,
+                                    aRv)
                                     .downcast<ChromeWorkerPrivate>();
 }
 
@@ -3857,11 +3882,13 @@ WorkerPrivate::Constructor(const GlobalObject& aGlobal,
                            const nsAString& aScriptURL,
                            bool aIsChromeWorker, WorkerType aWorkerType,
                            const nsACString& aSharedWorkerName,
-                           LoadInfo* aLoadInfo, ErrorResult& aRv)
+                           LoadInfo* aLoadInfo,
+                           nsRefPtr<WorkerGlobalScopeFactory>& aWorkerScopeFactory,
+                           ErrorResult& aRv)
 {
   JSContext* cx = aGlobal.Context();
   return Constructor(cx, aScriptURL, aIsChromeWorker, aWorkerType,
-                     aSharedWorkerName, aLoadInfo, aRv);
+                     aSharedWorkerName, aLoadInfo, aWorkerScopeFactory, aRv);
 }
 
 // static
@@ -3870,7 +3897,9 @@ WorkerPrivate::Constructor(JSContext* aCx,
                            const nsAString& aScriptURL,
                            bool aIsChromeWorker, WorkerType aWorkerType,
                            const nsACString& aSharedWorkerName,
-                           LoadInfo* aLoadInfo, ErrorResult& aRv)
+                           LoadInfo* aLoadInfo,
+                           nsRefPtr<WorkerGlobalScopeFactory>& aWorkerScopeFactory,
+                           ErrorResult& aRv)
 {
   WorkerPrivate* parent = NS_IsMainThread() ?
                           nullptr :
@@ -3922,7 +3951,8 @@ WorkerPrivate::Constructor(JSContext* aCx,
 
   nsRefPtr<WorkerPrivate> worker =
     new WorkerPrivate(aCx, parent, aScriptURL, aIsChromeWorker,
-                      aWorkerType, aSharedWorkerName, *aLoadInfo);
+                      aWorkerType, aSharedWorkerName, *aLoadInfo,
+                      aWorkerScopeFactory);
 
   if (!runtimeService->RegisterWorker(aCx, worker)) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
@@ -6080,15 +6110,10 @@ JSObject*
 WorkerPrivate::CreateGlobalScope(JSContext* aCx)
 {
   AssertIsOnWorkerThread();
+  MOZ_ASSERT(mGlobalScopeFactory);
 
   nsRefPtr<WorkerGlobalScope> globalScope;
-  if (IsSharedWorker()) {
-    globalScope = new SharedWorkerGlobalScope(this, SharedWorkerName());
-  } else if (IsServiceWorker()) {
-    globalScope = new ServiceWorkerGlobalScope(this, SharedWorkerName());
-  } else {
-    globalScope = new DedicatedWorkerGlobalScope(this);
-  }
+  globalScope = mGlobalScopeFactory->CreateGlobalScope(this, SharedWorkerName());
 
   JS::Rooted<JSObject*> global(aCx, globalScope->WrapGlobalObject(aCx));
   NS_ENSURE_TRUE(global, nullptr);
