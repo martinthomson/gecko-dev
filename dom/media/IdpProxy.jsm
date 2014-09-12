@@ -16,90 +16,69 @@ const {
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Sandbox",
-                                  "resource://gre/modules/identity/Sandbox.jsm");
-
 /**
  * An invisible iframe for hosting the idp shim.
  *
  * There is no visible UX here, as we assume the user has already
  * logged in elsewhere (on a different screen in the web site hosting
  * the RTC functions).
+ *
+ * @param win (object) the hosting window
+ * @param uri (string) path to load
+ * @param messageCallback (function) callback to invoke on the arrival
+ *     of messages from the IdP
  */
-function IdpChannel(uri, messageCallback) {
-  this.sandbox = null;
-  this.messagechannel = null;
+function IdpChannel(win, uri, messageCallback) {
+  this.window = win;
+  this.active = false;
+  this.port = null;
   this.source = uri;
   this.messageCallback = messageCallback;
 }
 
 IdpChannel.prototype = {
   /**
-   * Create a hidden, sandboxed iframe for hosting the IdP's js shim.
-   *
-   * @param callback
-   *                (function) invoked when this completes, with an error
-   *                argument if there is a problem, no argument if everything is
-   *                ok
+   * Create a sandbox (SharedWorker) for hosting the IdP's js shim.
+   * @return Promise<MessagePort> a promise of a message port.
    */
-  open: function(callback) {
-    if (this.sandbox) {
-      return callback(new Error("IdP channel already open"));
+  open: function() {
+    if (this.active) {
+      throw new Error("IdP channel already active");
     }
 
-    let ready = this._sandboxReady.bind(this, callback);
-    this.sandbox = new Sandbox(this.source, ready);
-  },
-
-  _sandboxReady: function(aCallback, aSandbox) {
-    // Inject a message channel into the subframe.
-    try {
-      this.messagechannel = new aSandbox._frame.contentWindow.MessageChannel();
-      Object.defineProperty(
-        aSandbox._frame.contentWindow.wrappedJSObject,
-        "rtcwebIdentityPort",
-        {
-          value: this.messagechannel.port2
-        }
-      );
-    } catch (e) {
-      this.close();
-      aCallback(e); // oops, the IdP proxy overwrote this.. bad
-      return;
-    }
-    this.messagechannel.port1.onmessage = function(msg) {
+    this.active = true;
+    let factory = this.window.PeerConnectionIdpFactory;
+    this.port = factory.createIdpInstance(this.source);
+    this.port.onmessage = msg => {
       this.messageCallback(msg.data);
-    }.bind(this);
-    this.messagechannel.port1.start();
-    aCallback();
+    };
   },
 
   send: function(msg) {
-    this.messagechannel.port1.postMessage(msg);
+    this.port.postMessage(msg);
   },
 
-  close: function IdpChannel_close() {
-    if (this.sandbox) {
-      if (this.messagechannel) {
-        this.messagechannel.port1.close();
-      }
-      this.sandbox.free();
+  close: function() {
+    if (this.port) {
+      this.port.close();
     }
-    this.messagechannel = null;
-    this.sandbox = null;
+    this.port = null;
+    this.active = false;
   }
 };
 
 /**
  * A message channel between the RTC PeerConnection and a designated IdP Proxy.
  *
+ * @param win (object) the hosting window
  * @param domain (string) the domain to load up
  * @param protocol (string) Optional string for the IdP protocol
  */
-function IdpProxy(domain, protocol) {
+function IdpProxy(win, domain, protocol) {
   IdpProxy.validateDomain(domain);
   IdpProxy.validateProtocol(protocol);
 
+  this.window = win;
   this.domain = domain;
   this.protocol = protocol || "default";
 
@@ -127,7 +106,8 @@ IdpProxy.validateDomain = function(domain) {
     if (uri.hostPort !== domain) {
       throw new Error(message);
     }
-  } catch (e if (e.result === Cr.NS_ERROR_MALFORMED_URI)) {
+  } catch (e if (typeof e.result !== "undefined" &&
+                 e.result === Cr.NS_ERROR_MALFORMED_URI)) {
     throw new Error(message);
   }
 };
@@ -165,27 +145,19 @@ IdpProxy.prototype = {
   },
 
   /**
-   * Get a sandboxed iframe for hosting the idp-proxy's js. Create a message
-   * channel down to the frame.
-   *
-   * @param errorCallback (function) a callback that will be invoked if there
-   *                is a fatal error starting the proxy
+   * Start the IdP proxy.  This completes asynchronously, but the object is
+   * immediately usable because we enqueue messages until the proxy indicates
+   * that it's ready.
    */
-  start: function(errorCallback) {
+  start: function() {
     if (this.channel) {
       return;
     }
     let well_known = "https://" + this.domain;
     well_known += "/.well-known/idp-proxy/" + this.protocol;
-    this.channel = new IdpChannel(well_known, this._messageReceived.bind(this));
-    this.channel.open(function(error) {
-      if (error) {
-        this.close();
-        if (typeof errorCallback === "function") {
-          errorCallback(error);
-        }
-      }
-    }.bind(this));
+    this.channel = new IdpChannel(this.window, well_known,
+                                  this._messageReceived.bind(this));
+    this.channel.open();
   },
 
   /**
@@ -221,9 +193,9 @@ IdpProxy.prototype = {
     }
     if (!this.ready && message.type === "READY") {
       this.ready = true;
-      this.pending.forEach(function(p) {
+      this.pending.forEach(p => {
         this.send(p.message, p.callback);
-      }, this);
+      });
       this.pending = [];
     } else if (this.tracking[message.id]) {
       var callback = this.tracking[message.id];
@@ -252,15 +224,11 @@ IdpProxy.prototype = {
     this.channel.close();
     this._reset();
 
-    // dump a message of type "ERROR" in response to all outstanding
+    // generate a message of type "ERROR" in response to all outstanding
     // messages to the IdP
     let error = { type: "ERROR", error: "IdP closed" };
-    Object.keys(trackingCopy).forEach(function(k) {
-      trackingCopy[k](error);
-    });
-    pendingCopy.forEach(function(p) {
-      p.callback(error);
-    });
+    Object.keys(trackingCopy).forEach(k => trackingCopy[k](error));
+    pendingCopy.forEach(p => p.callback(error));
   },
 
   toString: function() {
