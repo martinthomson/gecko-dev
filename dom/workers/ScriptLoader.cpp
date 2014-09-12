@@ -521,26 +521,14 @@ private:
         }
       }
 
-      // If the load principal is the system principal then the channel
-      // principal must also be the system principal (we do not allow chrome
-      // code to create workers with non-chrome scripts). Otherwise this channel
-      // principal must be same origin with the load principal (we check again
-      // here in case redirects changed the location of the script).
-      if (nsContentUtils::IsSystemPrincipal(loadPrincipal)) {
-        if (!nsContentUtils::IsSystemPrincipal(channelPrincipal)) {
-          return NS_ERROR_DOM_BAD_URI;
-        }
-      }
-      else  {
-        nsCString scheme;
-        rv = finalURI->GetScheme(scheme);
-        NS_ENSURE_SUCCESS(rv, rv);
+      nsCString scheme;
+      rv = finalURI->GetScheme(scheme);
+      NS_ENSURE_SUCCESS(rv, rv);
 
-        // We exempt data urls and other URI's that inherit their
-        // principal again.
-        if (NS_FAILED(loadPrincipal->CheckMayLoad(finalURI, false, true))) {
-          return NS_ERROR_DOM_BAD_URI;
-        }
+      // We exempt data urls and other URI's that inherit their
+      // principal again.
+      if (NS_FAILED(loadPrincipal->CheckMayLoad(finalURI, false, true))) {
+        return NS_ERROR_DOM_BAD_URI;
       }
 
       mWorkerPrivate->SetPrincipal(channelPrincipal);
