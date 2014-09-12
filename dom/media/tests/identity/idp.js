@@ -2,15 +2,16 @@
   "use strict";
 
   function IDPJS() {
-    this.domain = window.location.host;
-    var p = window.location.pathname;
-    this.protocol = p.substring(p.lastIndexOf('/') + 1) + window.location.hash;
+    this.domain = global.location.host;
+    var p = global.location.pathname;
+    this.protocol = p.substring(p.lastIndexOf('/') + 1) + global.location.hash;
     this.username = "someone@" + this.domain;
     // so rather than create a million different IdP configurations and litter
     // the world with files all containing near-identical code, let's use the
     // hash/URL fragment as a way of generating instructions for the IdP
-    this.instructions = window.location.hash.replace("#", "").split(":");
-    this.port = window.rtcwebIdentityPort;
+    this.instructions = global.location.hash.replace("#", "").split(":");
+
+    this.port = global.webrtcIdentityPort || global.rtcwebIdentityPort;
     this.port.onmessage = this.receiveMessage.bind(this);
     this.sendResponse({
       type : "READY"
@@ -49,7 +50,7 @@
       response.type = "ERROR";
     }
 
-    window.setTimeout(function() {
+    global.setTimeout(function() {
       this.port.postMessage(response);
     }.bind(this), this.getDelay());
   };

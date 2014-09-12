@@ -20,9 +20,9 @@ runNetworkTest(function () {
   test = new PeerConnectionTest();
   test.setMediaConstraints([{audio: true}], [{audio: true}]);
   // first example generates an error
-  test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.html#error', 'nobody');
+  test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js#error', 'nobody');
   // second generates a bad assertion; which fails to validate
-  test.setIdentityProvider(test.pcRemote, 'example.com', 'idp.html#bad', 'nobody');
+  test.setIdentityProvider(test.pcRemote, 'example.com', 'idp.js#bad', 'nobody');
 
   var localEvents = trapIdentityEvents(test.pcLocal._pc);
   var remoteEvents = trapIdentityEvents(test.pcRemote._pc);
@@ -34,7 +34,7 @@ runNetworkTest(function () {
         function checkEvents() {
           ok(localEvents.idpassertionerror, 'local assertion generation should fail (idpassertionerror)');
           is(localEvents.idpassertionerror.idp, 'example.com', 'event IdP is correct');
-          is(localEvents.idpassertionerror.protocol, 'idp.html#error', 'event IdP protocol is #error');
+          is(localEvents.idpassertionerror.protocol, 'idp.js#error', 'event IdP protocol is #error');
           ok(!remoteEvents.idpassertionerror, 'remote assertion generation should succeed (idpassertionerror)');
           ok(!localEvents.identityresult, 'local assertion generation should fail (identityresult)');
           ok(remoteEvents.identityresult, 'remote assertion generation should succeed (identityresult)');
@@ -43,7 +43,7 @@ runNetworkTest(function () {
           ok(!remoteEvents.peeridentity, 'no peer identity event for remote peer');
           ok(localEvents.idpvalidationerror, 'local fails to validate');
           is(localEvents.idpvalidationerror.idp, 'example.com', 'event IdP is correct');
-          is(localEvents.idpvalidationerror.protocol, 'idp.html#bad', 'event IdP protocol is #bad');
+          is(localEvents.idpvalidationerror.protocol, 'idp.js#bad', 'event IdP protocol is #bad');
           ok(!remoteEvents.idpvalidationerror, 'remote doesn\'t even see an assertion');
 
           test.next();

@@ -25,7 +25,7 @@ function test_domain_sandbox(done) {
                   "", 12, null, diabolical, true ];
   domains.forEach(function(domain) {
     try {
-      var idp = new IdpProxy(domain);
+      var idp = new IdpProxy(window, domain);
       ok(false, "IdpProxy didn't catch bad domain: " + domain);
     } catch (e) {
       var str = (typeof domain === "string") ? domain : typeof domain;
@@ -40,7 +40,7 @@ function test_protocol_sandbox(done) {
                  "\\evil", "%5cevil", 12, true, {} ];
   protos.forEach(function(proto) {
     try {
-      var idp = new IdpProxy("example.com", proto);
+      var idp = new IdpProxy(window, "example.com", proto);
       ok(false, "IdpProxy didn't catch bad protocol: " + proto);
     } catch (e) {
       var str = (typeof proto === "string") ? proto : typeof proto;
@@ -68,7 +68,7 @@ function test_success_response(done) {
     done();
   }
 
-  idp = new IdpProxy("example.com", "idp.html");
+  idp = new IdpProxy(window, "example.com", "idp.js");
   idp.start(failure);
   idp.send(request, handleResponse);
 }
@@ -83,7 +83,7 @@ function test_error_response(done) {
     done();
   }
 
-  idp = new IdpProxy("example.com", "idp.html#error");
+  idp = new IdpProxy(window, "example.com", "idp.js#error");
   idp.start(failure);
   idp.send(request, handleResponse);
 }
@@ -99,7 +99,7 @@ function test_delayed_response(done) {
     done();
   }
 
-  idp = new IdpProxy("example.com", "idp.html#delay100");
+  idp = new IdpProxy(window, "example.com", "idp.js#delay100");
   idp.start(failure);
   idp.send(request, handleResponse);
 }

@@ -28,7 +28,7 @@ function getIdentityAssertion(fingerprints, callback) {
     callback(assertion);
   }
 
-  idp = new IdpProxy("example.com", "idp.html");
+  idp = new IdpProxy("example.com", "idp.js");
   idp.start(handleFailure);
   idp.send({
     type: "SIGN",
