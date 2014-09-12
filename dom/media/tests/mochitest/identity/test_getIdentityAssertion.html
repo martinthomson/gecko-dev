@@ -3,9 +3,9 @@
 <head>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="../head.js"></script>
-  <script type="application/javascript" src="../pc.js"></script>
-  <script type="application/javascript" src="../templates.js"></script>
+  <script type="application/javascript" src="../mochitest/head.js"></script>
+  <script type="application/javascript" src="../mochitest/pc.js"></script>
+  <script type="application/javascript" src="../mochitest/templates.js"></script>
 </head>
 <body>
 <pre id="test">
@@ -45,7 +45,7 @@ function theTest() {
     "GET_IDENTITY_ASSERTION_FIRES_EVENTUALLY_AND_SUBSEQUENTLY",
     function(test) {
       var fired = 0;
-      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.html');
+      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js);
       test.pcLocal._pc.onidentityresult = function(e) {
         fired++;
         if (fired == 1) {
@@ -68,7 +68,7 @@ function theTest() {
   [
     "GET_IDENTITY_ASSERTION_FAILS",
     function(test) {
-      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.html#error');
+      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js#error');
       test.pcLocal._pc.onidentityresult = function(e) {
         ok(false, "Should not get an identity result");
         test.next();
@@ -83,7 +83,7 @@ function theTest() {
   [
     "GET_IDENTITY_ASSERTION_IDP_NOT_READY",
     function(test) {
-      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.html#error:ready');
+      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js#error:ready');
       test.pcLocal._pc.onidentityresult = function(e) {
         ok(false, "Should not get an identity result");
         test.next();
@@ -98,7 +98,7 @@ function theTest() {
   [
     "GET_IDENTITY_ASSERTION_WITH_SPECIFIC_NAME",
     function(test) {
-      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.html', 'user@example.com');
+      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js, 'user@example.com');
       test.pcLocal._pc.onidentityresult = function(e) {
         checkIdentity(e.assertion, 'user@example.com');
         test.next();

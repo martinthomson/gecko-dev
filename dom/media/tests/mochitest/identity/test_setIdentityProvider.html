@@ -4,9 +4,9 @@
   <meta charset="utf-8"/>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
   <script type="application/javascript" src="/tests/SimpleTest/SimpleTest.js"></script>
-  <script type="application/javascript" src="../head.js"></script>
-  <script type="application/javascript" src="../pc.js"></script>
-  <script type="application/javascript" src="../templates.js"></script>
+  <script type="application/javascript" src="../mochitest/head.js"></script>
+  <script type="application/javascript" src="../mochitest/pc.js"></script>
+  <script type="application/javascript" src="../mochitest/templates.js"></script>
   <script type="application/javascript" src="identityevent.js"></script>
 </head>
 <body>
@@ -23,8 +23,8 @@ var test;
 function theTest() {
   test = new PeerConnectionTest();
   test.setMediaConstraints([{audio: true}], [{audio: true}]);
-  test.setIdentityProvider(test.pcLocal, "test1.example.com", "idp.html", "someone");
-  test.setIdentityProvider(test.pcRemote, "test2.example.com", "idp.html", "someone");
+  test.setIdentityProvider(test.pcLocal, "test1.example.com", "idp.js", "someone");
+  test.setIdentityProvider(test.pcRemote, "test2.example.com", "idp.js", "someone");
 
   var localEvents = trapIdentityEvents(test.pcLocal._pc);
   var remoteEvents = trapIdentityEvents(test.pcRemote._pc);
