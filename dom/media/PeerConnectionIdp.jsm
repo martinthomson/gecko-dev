@@ -50,7 +50,7 @@ PeerConnectionIdp.prototype = {
       }
       this._idpchannel.close();
     }
-    this._idpchannel = new IdpProxy(provider, protocol);
+    this._idpchannel = new IdpProxy(this._win, provider, protocol);
   },
 
   close: function() {
