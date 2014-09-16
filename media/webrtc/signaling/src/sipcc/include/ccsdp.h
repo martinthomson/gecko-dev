@@ -249,6 +249,8 @@ typedef enum {
     SDP_ATTR_CONNECTION,
     SDP_ATTR_EXTMAP,  /* RFC 5285 */
     SDP_ATTR_IDENTITY,
+    SDP_ATTR_MSID,
+    SDP_ATTR_MSID_SEMANTIC,
     SDP_MAX_ATTR_TYPES,
     SDP_ATTR_INVALID
 } sdp_attr_e;
@@ -410,7 +412,7 @@ int ccsdpGetBandwidthValue (void *sdp_handle, uint16_t level, uint16_t inst_num)
  * @param[in] inst_num    Pointer to a uint16_t in which to return the instance number of the newly added attribute.
  *
  * @return     sdp_result_e
- * 		SDP_SUCCESS            Attribute was added successfully.
+ *              SDP_SUCCESS            Attribute was added successfully.
  *              SDP_NO_RESOURCE        No memory avail for new attribute.
  *              SDP_INVALID_PARAMETER  Specified media line is not defined.
  */
@@ -427,7 +429,7 @@ sdp_result_e ccsdpAddNewAttr (void *sdp_handle, uint16_t level, uint8_t cap_num,
  * @param[out] *val       max-dpb value.
  *
  * @return     sdp_result_e
- * 		SDP_SUCCESS            Attribute was added successfully.
+ *              SDP_SUCCESS            Attribute was added successfully.
  */
 
 sdp_result_e ccsdpAttrGetFmtpMaxDpb (void *sdp_handle, uint16_t level,

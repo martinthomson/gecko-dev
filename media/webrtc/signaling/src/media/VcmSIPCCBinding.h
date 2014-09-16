@@ -32,10 +32,10 @@ namespace CSF
     class StreamObserver
     {
     public:
-    	  virtual void registerStream(cc_call_handle_t call, int streamId, bool isVideo) = 0;
-    	  virtual void deregisterStream(cc_call_handle_t call, int streamId) = 0;
-    	  virtual void dtmfBurst(int digit, int direction, int duration) = 0;
-    	  virtual void sendIFrame(cc_call_handle_t call) = 0;
+          virtual void registerStream(cc_call_handle_t call, int streamId, bool isVideo) = 0;
+          virtual void deregisterStream(cc_call_handle_t call, int streamId) = 0;
+          virtual void dtmfBurst(int digit, int direction, int duration) = 0;
+          virtual void sendIFrame(cc_call_handle_t call) = 0;
     };
 
     class VcmSIPCCBinding
@@ -86,5 +86,3 @@ namespace CSF
 }
 
 #endif
-
-
