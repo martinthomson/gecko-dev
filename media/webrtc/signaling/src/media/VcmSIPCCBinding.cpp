@@ -789,7 +789,8 @@ short vcmSetIceMediaParams(const char *peerconnection,
  * Create a remote stream
  *
  *  @param[in] mcap_id - group identifier to which stream belongs.
- *  @param[in]  peerconnection - the peerconnection in use
+ *  @param[in] peerconnection - the peerconnection in use
+ *  @param[in] stream_id_str - the identifier used by the remote peer
  *  @param[out] pc_stream_id - the id of the allocated stream
  *
  *  TODO(ekr@rtfm.com): Revise along with everything else for the
@@ -800,6 +801,7 @@ short vcmSetIceMediaParams(const char *peerconnection,
 short vcmCreateRemoteStream(
   cc_mcapid_t mcap_id,
   const char *peerconnection,
+  const char *stream_id_str,
   int *pc_stream_id) {
   ASSERT_ON_THREAD(VcmSIPCCBinding::getMainThread());
   nsresult res;
@@ -810,8 +812,13 @@ short vcmCreateRemoteStream(
   sipcc::PeerConnectionWrapper pc(peerconnection);
   ENSURE_PC(pc, VCM_ERROR);
 
+  nsString idStr;
+  if (stream_id_str) {
+    idStr = NS_ConvertUTF8toUTF16(stream_id_str);
+  }
+
   nsRefPtr<sipcc::RemoteSourceStreamInfo> info;
-  res = pc.impl()->CreateRemoteSourceStreamInfo(&info);
+  res = pc.impl()->CreateRemoteSourceStreamInfo(idStr, &info);
   if (NS_FAILED(res)) {
     return VCM_ERROR;
   }

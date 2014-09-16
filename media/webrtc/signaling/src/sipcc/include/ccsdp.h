@@ -150,6 +150,7 @@ typedef enum {
     SDP_UNRECOGNIZED_TOKEN,
     SDP_NULL_BUF_PTR,
     SDP_POTENTIAL_SDP_OVERFLOW,
+    SDP_EMPTY_TOKEN,
     SDP_MAX_RC
 } sdp_result_e;
 

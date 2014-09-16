@@ -515,6 +515,7 @@ short vcmStartIceChecks(const char *peerconnection, cc_boolean isControlling);
  *
  *  @param[in] mcap_id - group identifier to which stream belongs.
  *  @param[in]  peerconnection - the peerconnection in use
+ *  @param[in] stream_id_str - the remotely provided identifier for the stream
  *  @param[out] pc_stream_id - the id of the allocated stream
  *
  *  TODO(ekr@rtfm.com): Revise along with everything else for the
@@ -525,6 +526,7 @@ short vcmStartIceChecks(const char *peerconnection, cc_boolean isControlling);
 short vcmCreateRemoteStream(
              cc_mcapid_t mcap_id,
              const char *peerconnection,
+             const char *stream_id_str,
              int *pc_stream_id);
 
 /*

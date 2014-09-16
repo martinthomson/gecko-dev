@@ -321,10 +321,21 @@ PeerConnectionImpl::~PeerConnectionImpl()
 }
 
 already_AddRefed<DOMMediaStream>
-PeerConnectionImpl::MakeMediaStream(uint32_t aHint)
+PeerConnectionImpl::MakeMediaStream(const nsAString& aID, uint32_t aHint)
 {
+  // provide an identifier for the stream if there isn't already one
+  nsString id;
+  if (aID.IsEmpty()) {
+#ifdef MOZILLA_INTERNAL_API
+    nsresult rv = DOMMediaStream::GenerateID(id);
+    NS_ENSURE_SUCCESS(rv, nullptr);
+#endif
+  } else {
+    id = aID;
+  }
+
   nsRefPtr<DOMMediaStream> stream =
-    DOMMediaStream::CreateSourceStream(GetWindow(), aHint);
+    DOMMediaStream::CreateSourceStream(GetWindow(), aHint, id);
 
 #ifdef MOZILLA_INTERNAL_API
   // Make the stream data (audio/video samples) accessible to the receiving page.
@@ -350,8 +361,9 @@ PeerConnectionImpl::MakeMediaStream(uint32_t aHint)
 }
 
 nsresult
-PeerConnectionImpl::CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo>*
-                                                 aInfo)
+PeerConnectionImpl::CreateRemoteSourceStreamInfo(
+  const nsAString& aID,
+  nsRefPtr<RemoteSourceStreamInfo>* aInfo)
 {
   MOZ_ASSERT(aInfo);
   PC_AUTO_ENTER_API_CALL_NO_CHECK();
@@ -360,7 +372,7 @@ PeerConnectionImpl::CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo
   // needs to actually propagate a hint for local streams.
   // TODO(ekr@rtfm.com): Clean up when we have explicit track lists.
   // See bug 834835.
-  nsRefPtr<DOMMediaStream> stream = MakeMediaStream(0);
+  nsRefPtr<DOMMediaStream> stream = MakeMediaStream(aID, 0);
   if (!stream) {
     return NS_ERROR_FAILURE;
   }
@@ -716,7 +728,7 @@ PeerConnectionImpl::CreateFakeMediaStream(uint32_t aHint, nsIDOMMediaStream** aR
     aHint &= ~MEDIA_STREAM_MUTE;
   }
 
-  nsRefPtr<DOMMediaStream> stream = MakeMediaStream(aHint);
+  nsRefPtr<DOMMediaStream> stream = MakeMediaStream(NS_LITERAL_STRING(""), aHint);
   if (!stream) {
     return NS_ERROR_FAILURE;
   }

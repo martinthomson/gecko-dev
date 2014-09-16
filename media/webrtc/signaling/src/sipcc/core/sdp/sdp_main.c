@@ -183,7 +183,7 @@ const sdp_attrarray_t sdp_attr[SDP_MAX_ATTR_TYPES] =
     {"identity", sizeof("identity"),
       sdp_parse_attr_simple_string, sdp_build_attr_simple_string},
     {"msid", sizeof("msid"),
-      sdp_parse_attr_simple_string, sdp_build_attr_simple_string},
+      sdp_parse_attr_msid, sdp_build_attr_msid},
     {"msid-semantic", sizeof("msid-semantic"),
       sdp_parse_attr_simple_string, sdp_build_attr_simple_string},
 };
@@ -541,7 +541,8 @@ const char* sdp_result_name[SDP_MAX_RC] =
      "SDP_NO_RESOURCE",
      "SDP_UNRECOGNIZED_TOKEN",
      "SDP_NULL_BUF_PTR",
-     "SDP_POTENTIAL_SDP_OVERFLOW"};
+     "SDP_POTENTIAL_SDP_OVERFLOW",
+     "SDP_EMPTY_TOKEN"};
 
 const char *sdp_get_result_name ( sdp_result_e rc )
 {

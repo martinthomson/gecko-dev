@@ -1024,7 +1024,7 @@ gsmsdp_get_local_source_v4_address (fsmdef_media_t *media)
                         MAX_IPADDR_STR_LEN);
         if (is_empty_str(curr_media_ip) == FALSE) {
 
-        	 str2ip(curr_media_ip, &addr);
+                 str2ip(curr_media_ip, &addr);
              util_ntohl(&addr, &addr);
              if (util_check_if_ip_valid(&media->src_addr) == FALSE)  {
                  // Update the media Src address only if it is invalid
@@ -1398,7 +1398,7 @@ gsmsdp_set_media_attributes (uint32_t media_type, void *sdp_p, uint16_t level,
                                                SIPSDP_ATTR_ENCNAME_OPUS);
 
             (void) sdp_attr_set_rtpmap_clockrate(sdp_p, level, 0, a_inst,
-            		RTPMAP_OPUS_CLOCKRATE);
+                        RTPMAP_OPUS_CLOCKRATE);
             (void) sdp_attr_set_rtpmap_num_chan (sdp_p, level, 0, a_inst, 2);
 
             /* a=fmtp options */
@@ -1424,7 +1424,7 @@ gsmsdp_set_media_attributes (uint32_t media_type, void *sdp_p, uint16_t level,
 
                 if(maxcodedaudiobw) {
                     sdp_attr_set_fmtp_maxcodedaudiobandwidth (sdp_p, level, 0, a_inst2,
-            		     max_coded_audio_bandwidth_table[opus_fb].name);
+                             max_coded_audio_bandwidth_table[opus_fb].name);
                 }
 
                 if(cbr)
@@ -2986,8 +2986,8 @@ gsmsdp_update_local_sdp_for_multicast (fsmdef_dcb_t *dcb_p,
     level = media->level;
 
     GSM_DEBUG(DEB_L_C_F_PREFIX"%d %d %d",
-			  DEB_L_C_F_PREFIX_ARGS(GSM, dcb_p->line, dcb_p->call_id, fname),
-			  portnum, level, initial_offer);
+                          DEB_L_C_F_PREFIX_ARGS(GSM, dcb_p->line, dcb_p->call_id, fname),
+                          portnum, level, initial_offer);
 
     direction = gsmsdp_get_remote_sdp_direction(dcb_p, media->level,
                                                 &media->dest_addr);
@@ -5319,10 +5319,15 @@ gsmsdp_negotiate_media_lines (fsm_fcb_t *fcb_p, cc_sdp_t *sdp_p, boolean initial
                              stream.
                              TODO(ekr@rtfm.com): revisit when we have media
                              assigned to streams in the SDP */
-                          if (!created_media_stream){
+                          if (!created_media_stream) {
+                              const char *msid;
+
+                              msid = sdp_attr_get_simple_string(sdp_p, SDP_ATTR_MSID,
+                                                                i, 0, 0);
+
                               lsm_rc = lsm_add_remote_stream (dcb_p->line,
                                                               dcb_p->call_id,
-                                                              media,
+                                                              media, msid,
                                                               &pc_stream_id);
                               if (lsm_rc) {
                                 return (CC_CAUSE_NO_MEDIA);
@@ -5577,7 +5582,7 @@ gsmsdp_init_local_sdp (const char *peerconnection, cc_sdp_t **sdp_pp)
     }
 
 
-	ipaddr2dotted(addr_str, &ipaddr);
+        ipaddr2dotted(addr_str, &ipaddr);
 
     p_addr_str = PL_strtok_r(addr_str, "[ ]", &strtok_state);
 
@@ -6168,7 +6173,7 @@ gsmsdp_check_add_local_sdp_media (fsmdef_dcb_t *dcb_p, boolean hold)
                 GSM_DEBUG(DEB_L_C_F_PREFIX"no support addition mixing for %d "
                           "media type\n",
                           DEB_L_C_F_PREFIX_ARGS(GSM, dcb_p->line, dcb_p->call_id, fname),
-						  media_cap->type);
+                                                  media_cap->type);
                 continue;
             }
         }
@@ -6285,8 +6290,8 @@ gsmsdp_check_direction_change_local_sdp_media (fsmdef_dcb_t *dcb_p,
                     /* Support direction changed */
                     GSM_DEBUG(DEB_L_C_F_PREFIX"change support direction at level %d"
                               " from %d to %d\n",
-							  DEB_L_C_F_PREFIX_ARGS(GSM, dcb_p->line, dcb_p->call_id, fname),
-							  media->level, media->support_direction,
+                                                          DEB_L_C_F_PREFIX_ARGS(GSM, dcb_p->line, dcb_p->call_id, fname),
+                                                          media->level, media->support_direction,
                               media_cap->support_direction);
                     if (no_sdp_update) {
                         /*
@@ -7601,5 +7606,3 @@ gsmsdp_find_level_from_mid(fsmdef_dcb_t * dcb_p, const char * mid, uint16_t *lev
     }
     return CC_CAUSE_VALUE_NOT_FOUND;
 }
-
-

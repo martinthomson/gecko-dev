@@ -241,9 +241,12 @@ public:
   static PeerConnectionImpl* CreatePeerConnection();
   static nsresult ConvertRTCConfiguration(const RTCConfiguration& aSrc,
                                           IceConfiguration *aDst);
-  already_AddRefed<DOMMediaStream> MakeMediaStream(uint32_t aHint);
+  already_AddRefed<DOMMediaStream> MakeMediaStream(const nsAString& aID,
+                                                   uint32_t aHint);
 
-  nsresult CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo>* aInfo);
+  nsresult CreateRemoteSourceStreamInfo(
+    const nsAString& aID,
+    nsRefPtr<RemoteSourceStreamInfo>* aInfo);
 
   // DataConnection observers
   void NotifyDataChannel(already_AddRefed<mozilla::DataChannel> aChannel);
