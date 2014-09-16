@@ -17,14 +17,25 @@ MediaStreamTrack::MediaStreamTrack(DOMMediaStream* aStream, TrackID aTrackID)
 {
   SetIsDOMBinding();
 
-  memset(&mID, 0, sizeof(mID));
-
+  mID.Truncate();
   nsresult rv;
   nsCOMPtr<nsIUUIDGenerator> uuidgen =
     do_GetService("@mozilla.org/uuid-generator;1", &rv);
   if (uuidgen) {
-    uuidgen->GenerateUUIDInPlace(&mID);
+    nsID id;
+    uuidgen->GenerateUUIDInPlace(&id);
+    char buffer[NSID_LENGTH];
+    id.ToProvidedString(buffer);
+    mID = NS_ConvertUTF8toUTF16(buffer);
   }
+}
+
+MediaStreamTrack::MediaStreamTrack(DOMMediaStream* aStream, TrackID aTrackID,
+                                   const nsAString& aID)
+  : mStream(aStream), mTrackID(aTrackID), mID(aID), mEnded(false),
+  mEnabled(true)
+{
+  SetIsDOMBinding();
 }
 
 MediaStreamTrack::~MediaStreamTrack()
@@ -38,14 +49,6 @@ NS_IMPL_ADDREF_INHERITED(MediaStreamTrack, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(MediaStreamTrack, DOMEventTargetHelper)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(MediaStreamTrack)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
-
-void
-MediaStreamTrack::GetId(nsAString& aID)
-{
-  char chars[NSID_LENGTH];
-  mID.ToProvidedString(chars);
-  aID = NS_ConvertASCIItoUTF16(chars);
-}
 
 void
 MediaStreamTrack::SetEnabled(bool aEnabled)

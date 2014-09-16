@@ -67,7 +67,9 @@ class DOMMediaStream : public nsIDOMMediaStream,
 public:
   typedef uint8_t TrackTypeHints;
 
-  DOMMediaStream();
+  static nsresult GenerateID(nsString& aID);
+
+  DOMMediaStream(const nsAString& aID);
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMMediaStream)
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -79,6 +81,8 @@ public:
   virtual JSObject* WrapObject(JSContext* aCx) MOZ_OVERRIDE;
 
   // WebIDL
+  void GetId(nsAString& aID) const { aID = mID; }
+
   double CurrentTime();
 
   void GetAudioTracks(nsTArray<nsRefPtr<AudioStreamTrack> >& aTracks);
@@ -176,6 +180,9 @@ public:
    */
   static already_AddRefed<DOMMediaStream>
   CreateSourceStream(nsIDOMWindow* aWindow, TrackTypeHints aHintContents);
+  static already_AddRefed<DOMMediaStream>
+  CreateSourceStream(nsIDOMWindow* aWindow, TrackTypeHints aHintContents,
+                     const nsAString& aID);
 
   /**
    * Create an nsDOMMediaStream whose underlying stream is a TrackUnionStream.
@@ -253,6 +260,8 @@ protected:
   class StreamListener;
   friend class StreamListener;
 
+  nsString mID;
+
   // StreamTime at which the currentTime attribute would return 0.
   StreamTime mLogicalStreamStartTime;
 
@@ -297,7 +306,7 @@ class DOMLocalMediaStream : public DOMMediaStream,
                             public nsIDOMLocalMediaStream
 {
 public:
-  DOMLocalMediaStream() {}
+  DOMLocalMediaStream(const nsAString& aID) : DOMMediaStream(aID) {}
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -327,7 +336,7 @@ class DOMAudioNodeMediaStream : public DOMMediaStream
 {
   typedef dom::AudioNode AudioNode;
 public:
-  explicit DOMAudioNodeMediaStream(AudioNode* aNode);
+  explicit DOMAudioNodeMediaStream(const nsAString& aID, AudioNode* aNode);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DOMAudioNodeMediaStream, DOMMediaStream)

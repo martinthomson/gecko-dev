@@ -22,7 +22,7 @@ public:
   virtual VideoStreamTrack* AsVideoStreamTrack() { return this; }
 
   // WebIDL
-  virtual void GetKind(nsAString& aKind) { aKind.AssignLiteral("video"); }
+  virtual void GetKind(nsAString& aKind) const { aKind.AssignLiteral("video"); }
 };
 
 }

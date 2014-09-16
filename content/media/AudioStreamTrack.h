@@ -22,7 +22,7 @@ public:
   virtual AudioStreamTrack* AsAudioStreamTrack() { return this; }
 
   // WebIDL
-  virtual void GetKind(nsAString& aKind) { aKind.AssignLiteral("audio"); }
+  virtual void GetKind(nsAString& aKind) const { aKind.AssignLiteral("audio"); }
 };
 
 }

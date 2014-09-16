@@ -306,10 +306,14 @@ nsDOMCameraManager::PermissionAllowed(uint32_t aCameraId,
 {
   mPermission = nsIPermissionManager::ALLOW_ACTION;
 
+  nsString id;
+  nsresult rv = DOMMediaStream::GenerateID(id);
+  NS_ENSURE_SUCCESS_VOID(rv);
+
   // Creating this object will trigger the aOnSuccess callback
   //  (or the aOnError one, if it fails).
   nsRefPtr<nsDOMCameraControl> cameraControl =
-    new nsDOMCameraControl(aCameraId, aInitialConfig, aOnSuccess, aOnError, mWindow);
+    new nsDOMCameraControl(id, aCameraId, aInitialConfig, aOnSuccess, aOnError, mWindow);
 
   Register(cameraControl);
 }

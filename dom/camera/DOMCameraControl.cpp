@@ -130,12 +130,13 @@ nsDOMCameraControl::DOMCameraConfiguration::~DOMCameraConfiguration()
   MOZ_COUNT_DTOR(nsDOMCameraControl::DOMCameraConfiguration);
 }
 
-nsDOMCameraControl::nsDOMCameraControl(uint32_t aCameraId,
+nsDOMCameraControl::nsDOMCameraControl(const nsAString& aID,
+                                       uint32_t aCameraId,
                                        const CameraConfiguration& aInitialConfig,
                                        GetCameraCallback* aOnSuccess,
                                        CameraErrorCallback* aOnError,
                                        nsPIDOMWindow* aWindow)
-  : DOMMediaStream()
+  : DOMMediaStream(aID)
   , mCameraControl(nullptr)
   , mAudioChannelAgent(nullptr)
   , mGetCameraOnSuccessCb(aOnSuccess)

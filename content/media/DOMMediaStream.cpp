@@ -15,6 +15,8 @@
 #include "MediaStreamGraph.h"
 #include "AudioStreamTrack.h"
 #include "VideoStreamTrack.h"
+#include "nsIUUIDGenerator.h"
+#include "nsServiceManagerUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -132,8 +134,8 @@ private:
   DOMMediaStream* mStream;
 };
 
-DOMMediaStream::DOMMediaStream()
-  : mLogicalStreamStartTime(0),
+DOMMediaStream::DOMMediaStream(const nsAString& aID)
+  : mID(aID), mLogicalStreamStartTime(0),
     mStream(nullptr), mHintContents(0), mTrackTypesAvailable(0),
     mNotifiedOfMediaStreamGraphShutdown(false)
 {
@@ -242,18 +244,47 @@ DOMMediaStream::InitStreamCommon(MediaStream* aStream)
   aStream->AddListener(mListener);
 }
 
-already_AddRefed<DOMMediaStream>
-DOMMediaStream::CreateSourceStream(nsIDOMWindow* aWindow, TrackTypeHints aHintContents)
+nsresult
+DOMMediaStream::GenerateID(nsString& aID)
 {
-  nsRefPtr<DOMMediaStream> stream = new DOMMediaStream();
+  nsresult rv;
+  nsCOMPtr<nsIUUIDGenerator> uuidgen =
+    do_GetService("@mozilla.org/uuid-generator;1", &rv);
+  if (NS_SUCCEEDED(rv) && uuidgen) {
+    nsID id;
+    rv = uuidgen->GenerateUUIDInPlace(&id);
+    char buffer[NSID_LENGTH];
+    id.ToProvidedString(buffer);
+    aID = NS_ConvertASCIItoUTF16(buffer);
+  }
+  return rv;
+}
+
+already_AddRefed<DOMMediaStream>
+DOMMediaStream::CreateSourceStream(nsIDOMWindow* aWindow, TrackTypeHints aHintContents,
+  const nsAString& aID)
+{
+  nsRefPtr<DOMMediaStream> stream = new DOMMediaStream(aID);
   stream->InitSourceStream(aWindow, aHintContents);
   return stream.forget();
 }
 
 already_AddRefed<DOMMediaStream>
+DOMMediaStream::CreateSourceStream(nsIDOMWindow* aWindow, TrackTypeHints aHintContents)
+{
+  nsString id;
+  nsresult rv = GenerateID(id);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+  return CreateSourceStream(aWindow, aHintContents, id);
+}
+
+already_AddRefed<DOMMediaStream>
 DOMMediaStream::CreateTrackUnionStream(nsIDOMWindow* aWindow, TrackTypeHints aHintContents)
 {
-  nsRefPtr<DOMMediaStream> stream = new DOMMediaStream();
+  nsString id;
+  nsresult rv = GenerateID(id);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+  nsRefPtr<DOMMediaStream> stream = new DOMMediaStream(id);
   stream->InitTrackUnionStream(aWindow, aHintContents);
   return stream.forget();
 }
@@ -512,7 +543,10 @@ already_AddRefed<DOMLocalMediaStream>
 DOMLocalMediaStream::CreateSourceStream(nsIDOMWindow* aWindow,
                                         TrackTypeHints aHintContents)
 {
-  nsRefPtr<DOMLocalMediaStream> stream = new DOMLocalMediaStream();
+  nsString id;
+  nsresult rv = GenerateID(id);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+  nsRefPtr<DOMLocalMediaStream> stream = new DOMLocalMediaStream(id);
   stream->InitSourceStream(aWindow, aHintContents);
   return stream.forget();
 }
@@ -521,13 +555,16 @@ already_AddRefed<DOMLocalMediaStream>
 DOMLocalMediaStream::CreateTrackUnionStream(nsIDOMWindow* aWindow,
                                             TrackTypeHints aHintContents)
 {
-  nsRefPtr<DOMLocalMediaStream> stream = new DOMLocalMediaStream();
+  nsString id;
+  nsresult rv = GenerateID(id);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+  nsRefPtr<DOMLocalMediaStream> stream = new DOMLocalMediaStream(id);
   stream->InitTrackUnionStream(aWindow, aHintContents);
   return stream.forget();
 }
 
-DOMAudioNodeMediaStream::DOMAudioNodeMediaStream(AudioNode* aNode)
-: mStreamNode(aNode)
+DOMAudioNodeMediaStream::DOMAudioNodeMediaStream(const nsAString& aID, AudioNode* aNode)
+: DOMMediaStream(aID), mStreamNode(aNode)
 {
 }
 
@@ -540,7 +577,10 @@ DOMAudioNodeMediaStream::CreateTrackUnionStream(nsIDOMWindow* aWindow,
                                                 AudioNode* aNode,
                                                 TrackTypeHints aHintContents)
 {
-  nsRefPtr<DOMAudioNodeMediaStream> stream = new DOMAudioNodeMediaStream(aNode);
+  nsString id;
+  nsresult rv = GenerateID(id);
+  NS_ENSURE_SUCCESS(rv, nullptr);
+  nsRefPtr<DOMAudioNodeMediaStream> stream = new DOMAudioNodeMediaStream(id, aNode);
   stream->InitTrackUnionStream(aWindow, aHintContents);
   return stream.forget();
 }

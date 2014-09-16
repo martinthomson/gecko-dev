@@ -22,7 +22,7 @@ dictionary MediaStreamConstraints {
 };
 
 interface MediaStream {
-    // readonly attribute DOMString    id;
+    readonly attribute DOMString    id;
     sequence<AudioStreamTrack> getAudioTracks();
     sequence<VideoStreamTrack> getVideoTracks();
     sequence<MediaStreamTrack> getTracks();
@@ -33,5 +33,5 @@ interface MediaStream {
     //         attribute EventHandler onended;
     //         attribute EventHandler onaddtrack;
     //         attribute EventHandler onremovetrack;
-	readonly attribute double currentTime;
+  readonly attribute double currentTime;
 };

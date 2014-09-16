@@ -49,7 +49,8 @@ public:
   // Great Renaming proposed in bug 983177.
   static bool HasSupport(JSContext* aCx, JSObject* aGlobal);
 
-  nsDOMCameraControl(uint32_t aCameraId,
+  nsDOMCameraControl(const nsAString& aID,
+                     uint32_t aCameraId,
                      const dom::CameraConfiguration& aInitialConfig,
                      dom::GetCameraCallback* aOnSuccess,
                      dom::CameraErrorCallback* aOnError,

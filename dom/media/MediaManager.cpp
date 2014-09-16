@@ -510,20 +510,26 @@ public:
                          MediaEngineSource* aAudioSource,
                          MediaEngineSource* aVideoSource)
   {
+    nsString id;
+    nsresult rv = GenerateID(id);
+    NS_ENSURE_SUCCESS(rv, nullptr);
+
     DOMMediaStream::TrackTypeHints hints =
       (aAudioSource ? DOMMediaStream::HINT_CONTENTS_AUDIO : 0) |
       (aVideoSource ? DOMMediaStream::HINT_CONTENTS_VIDEO : 0);
 
-    nsRefPtr<nsDOMUserMediaStream> stream = new nsDOMUserMediaStream(aListener,
+    nsRefPtr<nsDOMUserMediaStream> stream = new nsDOMUserMediaStream(id, aListener,
                                                                      aAudioSource,
                                                                      aVideoSource);
     stream->InitTrackUnionStream(aWindow, hints);
     return stream.forget();
   }
 
-  nsDOMUserMediaStream(GetUserMediaCallbackMediaStreamListener* aListener,
+  nsDOMUserMediaStream(const nsAString& aID,
+                       GetUserMediaCallbackMediaStreamListener* aListener,
                        MediaEngineSource *aAudioSource,
                        MediaEngineSource *aVideoSource) :
+    DOMLocalMediaStream(aID),
     mListener(aListener),
     mAudioSource(aAudioSource),
     mVideoSource(aVideoSource),

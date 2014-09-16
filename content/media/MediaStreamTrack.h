@@ -7,7 +7,6 @@
 #define MEDIASTREAMTRACK_H_
 
 #include "mozilla/DOMEventTargetHelper.h"
-#include "nsID.h"
 #include "StreamBuffer.h"
 
 namespace mozilla {
@@ -29,6 +28,8 @@ public:
    * MediaStream owned by aStream.
    */
   MediaStreamTrack(DOMMediaStream* aStream, TrackID aTrackID);
+  MediaStreamTrack(DOMMediaStream* aStream, TrackID aTrackID,
+                   const nsAString& aID);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaStreamTrack,
@@ -43,10 +44,10 @@ public:
   virtual VideoStreamTrack* AsVideoStreamTrack() { return nullptr; }
 
   // WebIDL
-  virtual void GetKind(nsAString& aKind) = 0;
-  void GetId(nsAString& aID);
-  void GetLabel(nsAString& aLabel) { aLabel.Truncate(); }
-  bool Enabled() { return mEnabled; }
+  virtual void GetKind(nsAString& aKind) const = 0;
+  void GetId(nsAString& aID) const { aID = mID; }
+  void GetLabel(nsAString& aLabel) const { aLabel.Truncate(); }
+  bool Enabled() const { return mEnabled; }
   void SetEnabled(bool aEnabled);
   void Stop();
 
@@ -58,7 +59,7 @@ protected:
 
   nsRefPtr<DOMMediaStream> mStream;
   TrackID mTrackID;
-  nsID mID;
+  nsString mID;
   bool mEnded;
   bool mEnabled;
 };
