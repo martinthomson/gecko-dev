@@ -182,7 +182,12 @@ const sdp_attrarray_t sdp_attr[SDP_MAX_ATTR_TYPES] =
       sdp_parse_attr_extmap, sdp_build_attr_extmap},
     {"identity", sizeof("identity"),
       sdp_parse_attr_simple_string, sdp_build_attr_simple_string},
+    {"msid", sizeof("msid"),
+      sdp_parse_attr_simple_string, sdp_build_attr_simple_string},
+    {"msid-semantic", sizeof("msid-semantic"),
+      sdp_parse_attr_simple_string, sdp_build_attr_simple_string},
 };
+
 /* Note: These *must* be in the same order as the enum types. */
 const sdp_namearray_t sdp_media[SDP_MAX_MEDIA_TYPES] =
 {
