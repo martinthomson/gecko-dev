@@ -537,6 +537,7 @@ short vcmCreateRemoteStream(
  *
  * @param[in] peerconnection
  * @param[in] pc_stream_id
+ * @param[in] track_id_str
  * @param[in] is_video
  *
  * Returns: zero(0) for success; otherwise, ERROR for failure
@@ -544,6 +545,7 @@ short vcmCreateRemoteStream(
 short vcmAddRemoteStreamHint(
             const char *peerconnection,
             int pc_stream_id,
+            const char *track_id_str,
             cc_boolean is_video);
 
 /*!

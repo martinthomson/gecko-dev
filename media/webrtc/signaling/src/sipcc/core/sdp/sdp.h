@@ -2132,4 +2132,10 @@ sdp_attr_get_extmap_id(void *sdp_ptr, u16 level, u16 inst);
 sdp_result_e
 sdp_attr_set_extmap(void *sdp_ptr, u16 level, u16 id, const char* uri, u16 inst);
 
+const char*
+sdp_attr_get_msid_identity(void *sdp_ptr, u16 level, u16 inst);
+
+const char*
+sdp_attr_get_msid_appdata(void *sdp_ptr, u16 level, u16 inst);
+
 #endif /* _SDP_H_ */

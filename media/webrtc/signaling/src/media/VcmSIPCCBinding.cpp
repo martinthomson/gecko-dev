@@ -842,6 +842,7 @@ short vcmCreateRemoteStream(
  *
  * @param[in] peerconnection
  * @param[in] pc_stream_id
+ * @param[in] track_id_str - the track ID, as a string (or nullptr)
  * @param[in] is_video
  *
  * Returns: zero(0) for success; otherwise, ERROR for failure
@@ -849,6 +850,7 @@ short vcmCreateRemoteStream(
 short vcmAddRemoteStreamHint(
   const char *peerconnection,
   int pc_stream_id,
+  const char *track_id_str,
   cc_boolean is_video) {
   ASSERT_ON_THREAD(VcmSIPCCBinding::getMainThread());
   nsresult res;
@@ -856,8 +858,13 @@ short vcmAddRemoteStreamHint(
   sipcc::PeerConnectionWrapper pc(peerconnection);
   ENSURE_PC(pc, VCM_ERROR);
 
+  nsString id_str;
+  if (track_id_str) {
+    id_str = NS_ConvertUTF8toUTF16(track_id_str);
+  }
+
   res = pc.impl()->media()->AddRemoteStreamHint(pc_stream_id,
-    is_video ? TRUE : FALSE);
+                                                is_video ? TRUE : FALSE);
   if (NS_FAILED(res)) {
     return VCM_ERROR;
   }

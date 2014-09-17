@@ -12673,3 +12673,39 @@ sdp_attr_set_extmap(void *sdp_ptr, u16 level, u16 id, const char* uri, u16 inst)
     sstrncpy(attr_p->attr.extmap.uri, uri, SDP_MAX_STRING_LEN+1);
     return (SDP_SUCCESS);
 }
+
+const char *
+sdp_attr_get_msid_identity(void *sdp_ptr, u16 level, u16 inst)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+      return NULL;
+    }
+
+    attr_p = sdp_find_attr(sdp_p, level, 0, SDP_ATTR_MSID, inst);
+    if (!attr_p) {
+      return NULL;
+    }
+
+    return attr_p->attr.msid.identity;
+}
+
+const char *
+sdp_attr_get_msid_appdata(void *sdp_ptr, u16 level, u16 inst)
+{
+    sdp_t       *sdp_p = (sdp_t *)sdp_ptr;
+    sdp_attr_t  *attr_p;
+
+    if (!sdp_verify_sdp_ptr(sdp_p)) {
+      return NULL;
+    }
+
+    attr_p = sdp_find_attr(sdp_p, level, 0, SDP_ATTR_MSID, inst);
+    if (!attr_p) {
+      return NULL;
+    }
+
+    return attr_p->attr.msid.appdata;
+}

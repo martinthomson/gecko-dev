@@ -93,7 +93,8 @@ gsmsdp_add_remote_stream(uint16_t idx, int pc_stream_id,
 
 static boolean
 gsmsdp_add_remote_track(uint16_t idx, uint16_t track,
-                         fsmdef_dcb_t *dcb_p, fsmdef_media_t *media);
+                        fsmdef_dcb_t *dcb_p, fsmdef_media_t *media,
+                        const char *track_id_str);
 
 
 
@@ -5322,8 +5323,7 @@ gsmsdp_negotiate_media_lines (fsm_fcb_t *fcb_p, cc_sdp_t *sdp_p, boolean initial
                           if (!created_media_stream) {
                               const char *msid;
 
-                              msid = sdp_attr_get_simple_string(sdp_p, SDP_ATTR_MSID,
-                                                                i, 0, 0);
+                              msid = sdp_attr_get_msid_identity(sdp_p, i, 0);
 
                               lsm_rc = lsm_add_remote_stream (dcb_p->line,
                                                               dcb_p->call_id,
@@ -5345,12 +5345,15 @@ gsmsdp_negotiate_media_lines (fsm_fcb_t *fcb_p, cc_sdp_t *sdp_p, boolean initial
                           }
 
                           if (created_media_stream) {
-                                /* Now add the track to the single media stream.
-                                   use index 0 because we only have one stream */
-                                result = gsmsdp_add_remote_track(0, i, dcb_p, media);
-                                MOZ_ASSERT(result);  /* TODO(ekr@rtfm.com) add real
-                                                       error checking, but this
-                                                       "can't fail" */
+                              const char* msid_appdata;
+                              msid_appdata = sdp_attr_get_msid_appdata(sdp_p, i, 0);
+                              /* Now add the track to the single media stream.
+                                 use index 0 because we only have one stream */
+                              result = gsmsdp_add_remote_track(0, i, dcb_p, media,
+                                                               msid_appdata);
+                              MOZ_ASSERT(result);  /* TODO(ekr@rtfm.com) add real
+                                                      error checking, but this
+                                                      "can't fail" */
                           }
                       }
                   }
@@ -5823,7 +5826,7 @@ gsmsdp_add_media_line (fsmdef_dcb_t *dcb_p, const cc_media_cap_t *media_cap,
 
           /* Add a=setup attribute */
           gsmsdp_set_setup_attribute(level, dcb_p->sdp->src_sdp, media->setup);
- 
+
           config_get_value(CFGID_RTCPMUX, &rtcpmux, sizeof(rtcpmux));
           if (SDP_MEDIA_APPLICATION != media_cap->type && rtcpmux) {
             gsmsdp_set_rtcp_mux_attribute (SDP_ATTR_RTCP_MUX, level, dcb_p->sdp->src_sdp, TRUE);
@@ -7538,12 +7541,14 @@ static boolean gsmsdp_add_remote_stream(uint16_t idx, int pc_stream_id, fsmdef_d
  * track - the track id
  * dcb_p - Pointer to the DCB whose SDP is to be manipulated.
  * media - the media object to add.
+ * track_id_str - the string identifier for the track (which may be null)
  *
  * returns TRUE for success and FALSE for failure
  */
 static boolean gsmsdp_add_remote_track(uint16_t idx, uint16_t track,
                                        fsmdef_dcb_t *dcb_p,
-                                       fsmdef_media_t *media) {
+                                       fsmdef_media_t *media,
+                                       const char *track_id_str) {
   cc_media_remote_track_table_t *stream;
   int vcm_ret;
 
@@ -7568,9 +7573,11 @@ static boolean gsmsdp_add_remote_track(uint16_t idx, uint16_t track,
   ++stream->num_tracks;
 
   if (media->type == SDP_MEDIA_VIDEO) {
-    vcm_ret = vcmAddRemoteStreamHint(dcb_p->peerconnection, idx, TRUE);
+    vcm_ret = vcmAddRemoteStreamHint(dcb_p->peerconnection, idx,
+                                     track_id_str, TRUE);
   } else if (media->type == SDP_MEDIA_AUDIO) {
-    vcm_ret = vcmAddRemoteStreamHint(dcb_p->peerconnection, idx, FALSE);
+    vcm_ret = vcmAddRemoteStreamHint(dcb_p->peerconnection, idx,
+                                     track_id_str, FALSE);
   } else {
     // No other track types should be valid here
     MOZ_ASSERT(FALSE);
@@ -7600,8 +7607,8 @@ gsmsdp_find_level_from_mid(fsmdef_dcb_t * dcb_p, const char * mid, uint16_t *lev
 
         mid_id = sdp_attr_get_simple_string(dcb_p->sdp->dest_sdp, SDP_ATTR_MID, media->level, 0, 1);
         if (strcmp(mid, mid_id) == 0) {
-        	*level = media->level;
-        	return CC_CAUSE_OK;
+                *level = media->level;
+                return CC_CAUSE_OK;
         }
     }
     return CC_CAUSE_VALUE_NOT_FOUND;
