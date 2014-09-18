@@ -11,6 +11,7 @@
 
 #include "signaling/src/sdp/Sdp.h"
 
+#include <mozilla/RefPtr.h>
 #include <mozilla/UniquePtr.h>
 
 #include "signaling/src/sdp/Sdp.h"
@@ -60,12 +61,14 @@ class JsepSession {
       const = 0;
 
   // Basic JSEP operations.
-  virtual nsresult CreateOffer(const JsepOfferOptions& options) = 0;
-  virtual nsresult CreateAnswer(const JsepAnswerOptions& options) = 0;
+  virtual nsresult CreateOffer(const JsepOfferOptions& options,
+                               std::string* offer) = 0;
+  virtual nsresult CreateAnswer(const JsepAnswerOptions& options,
+                                std::string* answer) = 0;
   virtual nsresult SetLocalDescription(JsepSdpType type,
-                                       const UniquePtr<mozilla::Sdp>& sdp) = 0;
+                                       const std::string& sdp) = 0;
   virtual nsresult SetRemoteDescription(JsepSdpType type,
-                                        const UniquePtr<mozilla::Sdp>& sdp) = 0;
+                                        const std::string& sdp) = 0;
 
   // Access the negotiated track pairs.
   virtual nsresult num_negotiated_track_pairs(size_t* pairs) const = 0;
