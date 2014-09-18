@@ -68,7 +68,7 @@ nsresult JsepSessionImpl::CreateGenericSDP(UniquePtr<Sdp>* sdpp) {
   //     local address in this field.  As mentioned in [RFC4566], the
   //     entire o= line needs to be unique, but selecting a random number
   //     for <sess-id> is sufficient to accomplish this.
-
+#if 0
   // Generate the sess-id if it is zero (the chance of getting that randomly
   // is vanishing.
   SECStatus rv = PK11_GenerateRandom(
@@ -90,7 +90,7 @@ nsresult JsepSessionImpl::CreateGenericSDP(UniquePtr<Sdp>* sdpp) {
   origin.SetAddrType(sdp::kIPv4);
   origin.SetAddr("0.0.0.0");
 #endif
-
+#endif
   //  *sdpp = Move(sdp);
   return NS_OK;
 }
