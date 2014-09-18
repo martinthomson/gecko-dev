@@ -44,6 +44,7 @@ class JsepAnswerOptions : public JsepOAOptions {};
 class JsepSession {
  public:
   JsepSession(const std::string& name) : mName(name) {}
+  virtual ~JsepSession() {}
 
   // Accessors for basic properties.
   virtual const std::string& name() const { return mName; }
@@ -54,8 +55,9 @@ class JsepSession {
   virtual nsresult RemoveTrack(size_t track_index) = 0;
   virtual nsresult ReplaceTrack(size_t track_index,
                                 const RefPtr<JsepMediaStreamTrack>& track) = 0;
-  virtual size_t num_tracks() = 0;
-  nsresult track(size_t index, RefPtr<JsepMediaStreamTrack>* track);
+  virtual size_t num_tracks() const = 0;
+  virtual nsresult track(size_t index, RefPtr<JsepMediaStreamTrack>* track)
+      const = 0;
 
   // Basic JSEP operations.
   virtual nsresult CreateOffer(const JsepOfferOptions& options) = 0;
