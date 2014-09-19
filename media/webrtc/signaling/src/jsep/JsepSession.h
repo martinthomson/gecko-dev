@@ -11,6 +11,7 @@
 
 #include "signaling/src/sdp/Sdp.h"
 
+#include <mozilla/RefPtr.h>
 #include <mozilla/UniquePtr.h>
 
 #include "signaling/src/sdp/Sdp.h"
@@ -44,6 +45,7 @@ class JsepAnswerOptions : public JsepOAOptions {};
 class JsepSession {
  public:
   JsepSession(const std::string& name) : mName(name) {}
+  virtual ~JsepSession() {}
 
   // Accessors for basic properties.
   virtual const std::string& name() const { return mName; }
@@ -54,16 +56,19 @@ class JsepSession {
   virtual nsresult RemoveTrack(size_t track_index) = 0;
   virtual nsresult ReplaceTrack(size_t track_index,
                                 const RefPtr<JsepMediaStreamTrack>& track) = 0;
-  virtual size_t num_tracks() = 0;
-  nsresult track(size_t index, RefPtr<JsepMediaStreamTrack>* track);
+  virtual size_t num_tracks() const = 0;
+  virtual nsresult track(size_t index, RefPtr<JsepMediaStreamTrack>* track)
+      const = 0;
 
   // Basic JSEP operations.
-  virtual nsresult CreateOffer(const JsepOfferOptions& options) = 0;
-  virtual nsresult CreateAnswer(const JsepAnswerOptions& options) = 0;
+  virtual nsresult CreateOffer(const JsepOfferOptions& options,
+                               std::string* offer) = 0;
+  virtual nsresult CreateAnswer(const JsepAnswerOptions& options,
+                                std::string* answer) = 0;
   virtual nsresult SetLocalDescription(JsepSdpType type,
-                                       const UniquePtr<mozilla::Sdp>& sdp) = 0;
+                                       const std::string& sdp) = 0;
   virtual nsresult SetRemoteDescription(JsepSdpType type,
-                                        const UniquePtr<mozilla::Sdp>& sdp) = 0;
+                                        const std::string& sdp) = 0;
 
   // Access the negotiated track pairs.
   virtual nsresult num_negotiated_track_pairs(size_t* pairs) const = 0;
