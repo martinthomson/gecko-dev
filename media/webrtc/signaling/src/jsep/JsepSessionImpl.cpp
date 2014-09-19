@@ -1,4 +1,3 @@
-#if 0
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,15 +8,17 @@
 #include "nss.h"
 #include "pk11pub.h"
 
+
 #include <mozilla/Move.h>
 #include <mozilla/UniquePtr.h>
 
+
 #include "signaling/src/sdp/Sdp.h"
-#include "signaling/src/sdp/SipccSdp.h"
+// #include "signaling/src/sdp/SipccSdp.h"
 
 namespace mozilla {
 namespace jsep {
-
+#if 0
 nsresult JsepSessionImpl::AddTrack(const RefPtr<JsepMediaStreamTrack>& track) {
   JsepSendingTrack strack;
   strack.mTrack = track;
@@ -95,8 +96,8 @@ nsresult JsepSessionImpl::CreateGenericSDP(UniquePtr<Sdp>* sdpp) {
   //  *sdpp = Move(sdp);
   return NS_OK;
 }
-
+#endif
 
 }  // namespace jsep
 }  // namespace mozilla
-#endif
+
