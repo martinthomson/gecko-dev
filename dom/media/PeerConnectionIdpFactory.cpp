@@ -43,6 +43,7 @@ public:
 
     nsRefPtr<WorkerGlobalScope> scope;
     scope = new workers::PeerConnectionIdpScope(aWorkerPrivate, mPort);
+    mPort = nullptr;
     return scope.forget();
   }
 
@@ -82,7 +83,6 @@ public:
     nsRefPtr<workers::MessagePort> workerPort;
     workerPort = new workers::MessagePort(aWorkerPrivate, mSerial);
     aWorkerPrivate->ConnectMessagePort(workerPort);
-    workerPort->Start();
 
     // the global scope for the worker might not be present when this runs
     PeerConnectionIdpScope* globalScope
@@ -114,16 +114,18 @@ NS_IMPL_ISUPPORTS0(PeerConnectionIdpFactory)
 /* static */ already_AddRefed<workers::MessagePort>
 PeerConnectionIdpFactory::CreateIdpInstance(const GlobalObject& aGlobal,
                                             const nsAString& aScriptUrl,
+                                            const nsAString& aName,
                                             ErrorResult& rv)
 {
   nsRefPtr<IdpWorkerScopeFactory> scopeFactory
     = new IdpWorkerScopeFactory();
   nsRefPtr<WorkerGlobalScopeFactory> workerScopeFactory
     = scopeFactory.get();  // bleargh
-  mozilla::dom::Optional<nsAString> noName;
+  mozilla::dom::Optional<nsAString> idpName;
+  idpName = &aName;
   nsRefPtr<SharedWorker> worker
-    = SharedWorker::Constructor(aGlobal, aGlobal.Context(), aScriptUrl, noName,
-                                workerScopeFactory, rv);
+    = SharedWorker::Constructor(aGlobal, aGlobal.Context(), aScriptUrl,
+                                idpName, workerScopeFactory, rv);
 
   WorkerPrivate* workerPrivate = worker->GetWorkerPrivate();
   uint64_t serial = workerPrivate->NextMessagePortSerial();
@@ -134,7 +136,6 @@ PeerConnectionIdpFactory::CreateIdpInstance(const GlobalObject& aGlobal,
   nsRefPtr<workers::MessagePort> mainPort
     = new workers::MessagePort(window, worker, serial);
   workerPrivate->RegisterMessagePort(aGlobal.Context(), mainPort);
-  mainPort->Start();
 
   // this needs to happen *now*, we can't yield or there is a race
   // we only ensure that the port is present in the worker before script is run

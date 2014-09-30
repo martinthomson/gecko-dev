@@ -7,6 +7,7 @@
                           'identityresult', 'peeridentity'];
     identityEvents.forEach(function(name) {
       target.addEventListener(name, function(e) {
+        console.log("Received event: " + e.type, e);
         state[name] = e;
       }, false);
     });

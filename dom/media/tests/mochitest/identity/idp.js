@@ -10,6 +10,7 @@
     // the world with files all containing near-identical code, let's use the
     // hash/URL fragment as a way of generating instructions for the IdP
     this.instructions = global.location.hash.replace("#", "").split(":");
+    dump("**************init\n");
 
     this.port = global.webrtcIdentityPort || global.rtcwebIdentityPort;
     this.port.onmessage = this.receiveMessage.bind(this);
@@ -51,12 +52,14 @@
     }
 
     global.setTimeout(function() {
+      dump(this.protocol + '> ' + JSON.stringify(response) + '\n');
       this.port.postMessage(response);
     }.bind(this), this.getDelay());
   };
 
   IDPJS.prototype.receiveMessage = function(ev) {
     var message = ev.data;
+    dump(this.protocol + '< ' + JSON.stringify(message) + '\n');
     switch (message.type) {
     case "SIGN":
       if (message.username) {
@@ -87,6 +90,7 @@
       var payload = JSON.parse(message.message);
       var contents = payload.contents;
       if (this.instructions.some(is("bad"))) {
+dump("is bad\n");
         contents = {};
       }
       this.sendResponse({

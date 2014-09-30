@@ -318,7 +318,13 @@ class SharedWorkerGlobalScopeFactory MOZ_FINAL
   : public WorkerGlobalScopeFactory
 {
 public:
-  static nsRefPtr<WorkerGlobalScopeFactory> instance;
+  static already_AddRefed<WorkerGlobalScopeFactory>
+  Instance()
+  {
+    nsRefPtr<WorkerGlobalScopeFactory> f
+      = new ServiceWorkerGlobalScopeFactory();
+    return f.forget();
+  }
 
   virtual already_AddRefed<WorkerGlobalScope>
   CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
@@ -329,7 +335,13 @@ class ServiceWorkerGlobalScopeFactory MOZ_FINAL
   : public WorkerGlobalScopeFactory
 {
 public:
-  static nsRefPtr<WorkerGlobalScopeFactory> instance;
+  static already_AddRefed<WorkerGlobalScopeFactory>
+  Instance()
+  {
+    nsRefPtr<WorkerGlobalScopeFactory> f
+      = new SharedWorkerGlobalScopeFactory();
+    return f.forget();
+  }
 
   virtual already_AddRefed<WorkerGlobalScope>
   CreateGlobalScope(WorkerPrivate* aWorkerPrivate,

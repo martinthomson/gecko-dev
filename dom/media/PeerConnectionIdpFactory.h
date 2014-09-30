@@ -22,6 +22,7 @@ namespace dom {
 
 class GlobalObject;
 class Promise;
+template<typename T> class Optional;
 
 namespace workers {
 class MessagePort;
@@ -33,10 +34,13 @@ public:
   NS_DECL_THREADSAFE_ISUPPORTS
 
   static already_AddRefed<workers::MessagePort>
-  CreateIdpInstance(const GlobalObject& aGlobal,
-                    const nsAString& aScriptUrl, ErrorResult& rv);
+  CreateIdpInstance(const GlobalObject& aGlobal, const nsAString& aScriptUrl,
+                    const nsAString& aName, ErrorResult& rv);
 
 private:
+  static void
+  BuildName(const nsAString& aUrl, mozilla::dom::Optional<nsAString>* aName);
+
   PeerConnectionIdpFactory() {} // not making any of these
   ~PeerConnectionIdpFactory() {}
 };
