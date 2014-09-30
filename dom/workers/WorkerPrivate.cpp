@@ -2427,55 +2427,24 @@ WorkerPrivateParent<Derived>::Suspend(JSContext* aCx, nsPIDOMWindow* aWindow)
   // end of their message ports are suspended.
   if (IsSharedWorker() || IsServiceWorker()) {
     AssertIsOnMainThread();
-    MOZ_ASSERT(mSharedWorkerPorts.Count());
+    MOZ_ASSERT(mSharedWorkers.Length());
 
-    struct Closure
-    {
-      nsPIDOMWindow* mWindow;
-      bool mAllSuspended;
-
-      explicit Closure(nsPIDOMWindow* aWindow)
-      : mWindow(aWindow), mAllSuspended(true)
-      {
-        AssertIsOnMainThread();
-        // aWindow may be null here.
-      }
-
-      static PLDHashOperator
-      Suspend(const uint64_t& aKey,
-              MessagePort* aMessagePort,
-              void* aClosure)
-      {
-        AssertIsOnMainThread();
-        MOZ_ASSERT(aMessagePort);
-        MOZ_ASSERT(aMessagePort->Worker());
-        MOZ_ASSERT(aClosure);
-
-        // Calling Suspend() may change the refcount, ensure that the worker
-        // outlives this call.
-        nsRefPtr<SharedWorker> sharedWorker = aMessagePort->Worker();
-
-        auto closure = static_cast<Closure*>(aClosure);
-
-        if (closure->mWindow && sharedWorker->GetOwner() == closure->mWindow) {
-          sharedWorker->Suspend();
-        } else {
-          MOZ_ASSERT_IF(sharedWorker->GetOwner() && closure->mWindow,
-                        !SameCOMIdentity(sharedWorker->GetOwner(),
-                                         closure->mWindow));
-          if (!sharedWorker->IsSuspended()) {
-            closure->mAllSuspended = false;
-          }
+    bool allSuspended = true;
+    for (size_t i = 0; i < mSharedWorkers.Length(); ++i) {
+      nsRefPtr<SharedWorker> sharedWorker = mSharedWorkers[i];
+      if (aWindow && sharedWorker->GetOwner() == aWindow) {
+        sharedWorker->Suspend();
+      } else {
+        MOZ_ASSERT_IF(sharedWorker->GetOwner() && aWindow,
+                      !SameCOMIdentity(sharedWorker->GetOwner(),
+                                       aWindow));
+        if (!sharedWorker->IsSuspended()) {
+          allSuspended = false;
         }
-        return PL_DHASH_NEXT;
       }
-    };
+    }
 
-    Closure closure(aWindow);
-
-    mSharedWorkerPorts.EnumerateRead(Closure::Suspend, &closure);
-
-    if (!closure.mAllSuspended || mParentSuspended) {
+    if (!allSuspended || mParentSuspended) {
       return true;
     }
   }
@@ -2515,54 +2484,24 @@ WorkerPrivateParent<Derived>::Resume(JSContext* aCx, nsPIDOMWindow* aWindow)
     AssertIsOnMainThread();
     MOZ_ASSERT(mSharedWorkerPorts.Count());
 
-    struct Closure
-    {
-      nsPIDOMWindow* mWindow;
-      bool mAnyRunning;
+    bool anyRunning = false;
 
-      explicit Closure(nsPIDOMWindow* aWindow)
-      : mWindow(aWindow), mAnyRunning(false)
-      {
-        AssertIsOnMainThread();
-        // aWindow may be null here.
-      }
-
-      static PLDHashOperator
-      Resume(const uint64_t& aKey,
-             MessagePort* aMessagePort,
-             void* aClosure)
-      {
-        AssertIsOnMainThread();
-        MOZ_ASSERT(aMessagePort);
-        MOZ_ASSERT(aClosure);
-
-        // Calling Resume() may change the refcount, ensure that the worker
-        // outlives this call.
-        nsRefPtr<SharedWorker> sharedWorker = aMessagePort->Worker();
-
-        auto closure = static_cast<Closure*>(aClosure);
-
-        if (closure->mWindow && sharedWorker->GetOwner() == closure->mWindow) {
-
+    for (uint32_t i = 0; i < mSharedWorkers.Length(); ++i) {
+      nsRefPtr<SharedWorker> sharedWorker = mSharedWorkers[i];
+        if (aWindow && sharedWorker->GetOwner() == aWindow) {
           sharedWorker->Resume();
-          closure->mAnyRunning = true;
+          anyRunning = true;
         } else {
-          MOZ_ASSERT_IF(sharedWorker->GetOwner() && closure->mWindow,
+          MOZ_ASSERT_IF(sharedWorker->GetOwner() && aWindow,
                         !SameCOMIdentity(sharedWorker->GetOwner(),
-                                         closure->mWindow));
+                                         aWindow));
           if (!sharedWorker->IsSuspended()) {
-            closure->mAnyRunning = true;
+            anyRunning = true;
           }
         }
-        return PL_DHASH_NEXT;
-      }
-    };
+    }
 
-    Closure closure(aWindow);
-
-    mSharedWorkerPorts.EnumerateRead(Closure::Resume, &closure);
-
-    if (!closure.mAnyRunning || !mParentSuspended) {
+    if (!anyRunning || !mParentSuspended) {
       return true;
     }
   }
@@ -3126,7 +3065,6 @@ WorkerPrivateParent<Derived>::UnregisterMessagePort(
 {
   AssertIsOnMainThread();
   MOZ_ASSERT(aMessagePort);
-  MOZ_ASSERT(aMessagePort->Worker());
   MOZ_ASSERT(IsSharedWorker() || IsServiceWorker());
   MOZ_ASSERT(mSharedWorkerPorts.Get(aMessagePort->Serial()));
 
@@ -3302,6 +3240,7 @@ WorkerPrivateParent<Derived>::CloseSharedWorkersForWindow(
   struct Closure
   {
     nsPIDOMWindow* mWindow;
+    nsAutoTArray<nsRefPtr<SharedWorker>, 10> mWorkers;
     nsAutoTArray<nsRefPtr<MessagePort>, 10> mPorts;
 
     explicit Closure(nsPIDOMWindow* aWindow)
@@ -3325,7 +3264,12 @@ WorkerPrivateParent<Derived>::CloseSharedWorkersForWindow(
 
       nsRefPtr<SharedWorker> sharedWorker = aMessagePort->Worker();
       if (sharedWorker->GetOwner() == closure->mWindow) {
-        closure->mPorts.AppendElement(aMessagePort);
+        if (aMessagePort->Serial() == sharedWorker->Serial()) {
+          closure->mWorkers.AppendElement(sharedWorker);
+        } else {
+          // secondary ports need to be closed separately
+          closure->mPorts.AppendElement(aMessagePort);
+        }
       } else {
         MOZ_ASSERT(!SameCOMIdentity(sharedWorker->GetOwner(),
                                     closure->mWindow));
@@ -3335,28 +3279,18 @@ WorkerPrivateParent<Derived>::CloseSharedWorkersForWindow(
     }
   };
 
-
-  // First close all the ports
+  // Gather all the affected workers
   Closure closure(aWindow);
   mSharedWorkerPorts.EnumerateRead(Closure::Collect, &closure);
-  nsAutoTArray<nsRefPtr<SharedWorker>, 10> workers;
-  for (uint32_t index = 0; index < closure.mPorts.Length(); index++) {
-    nsRefPtr<MessagePort>& port = closure.mPorts[index];
-    port->Close();
 
-    nsRefPtr<SharedWorker> worker = port->Worker();
-    if (worker && port->Serial() == worker->Serial()) {
-      // primary port
-      workers.AppendElement(worker);
-    } else {
-      // secondary ports need to be deregistered
-      UnregisterMessagePort(aCx, port);
-    }
+  // Close all the secondary ports
+  for (size_t index = 0; index < closure.mPorts.Length(); ++index) {
+    closure.mPorts[index]->Close();
   }
 
   // Then close all the workers
-  for (size_t index = 0; index < workers.Length(); ++index) {
-    nsRefPtr<SharedWorker>& worker = workers[index];
+  for (size_t index = 0; index < closure.mWorkers.Length(); ++index) {
+    nsRefPtr<SharedWorker>& worker = closure.mWorkers[index];
     if (worker->GetOwner() == aWindow) {
       worker->Close();
     } else {
@@ -3631,8 +3565,6 @@ class DedicatedWorkerGlobalScopeFactory MOZ_FINAL
   : public WorkerGlobalScopeFactory
 {
 public:
-  static nsRefPtr<WorkerGlobalScopeFactory> instance;
-
   virtual already_AddRefed<WorkerGlobalScope>
   CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
                     const nsACString& aWorkerName)
@@ -3641,10 +3573,15 @@ public:
     scope = new DedicatedWorkerGlobalScope(aWorkerPrivate);
     return scope.forget();
   }
+  static already_AddRefed<WorkerGlobalScopeFactory>
+  Instance() {
+    nsRefPtr<WorkerGlobalScopeFactory> f = new DedicatedWorkerGlobalScopeFactory();
+    return f.forget();
+  }
+private:
+  static DedicatedWorkerGlobalScopeFactory instance;
 };
 
-nsRefPtr<WorkerGlobalScopeFactory>
-DedicatedWorkerGlobalScopeFactory::instance = new DedicatedWorkerGlobalScopeFactory();
 
 // static
 already_AddRefed<WorkerPrivate>
@@ -3652,11 +3589,11 @@ WorkerPrivate::Constructor(const GlobalObject& aGlobal,
                            const nsAString& aScriptURL,
                            ErrorResult& aRv)
 {
+  nsRefPtr<WorkerGlobalScopeFactory> factory
+    = DedicatedWorkerGlobalScopeFactory::Instance();
   return WorkerPrivate::Constructor(aGlobal, aScriptURL, false,
                                     WorkerTypeDedicated, EmptyCString(),
-                                    nullptr,
-                                    DedicatedWorkerGlobalScopeFactory::instance,
-                                    aRv);
+                                    nullptr, factory, aRv);
 }
 
 // static
@@ -3683,11 +3620,11 @@ ChromeWorkerPrivate::Constructor(const GlobalObject& aGlobal,
                                  const nsAString& aScriptURL,
                                  ErrorResult& aRv)
 {
+  nsRefPtr<WorkerGlobalScopeFactory> factory
+    = DedicatedWorkerGlobalScopeFactory::Instance();
   return WorkerPrivate::Constructor(aGlobal, aScriptURL, true,
                                     WorkerTypeDedicated, EmptyCString(),
-                                    nullptr,
-                                    DedicatedWorkerGlobalScopeFactory::instance,
-                                    aRv)
+                                    nullptr, factory, aRv)
                                     .downcast<ChromeWorkerPrivate>();
 }
 
@@ -3718,7 +3655,8 @@ WorkerPrivate::Constructor(const GlobalObject& aGlobal,
 {
   JSContext* cx = aGlobal.Context();
   return Constructor(cx, aScriptURL, aIsChromeWorker, aWorkerType,
-                     aSharedWorkerName, aLoadInfo, aWorkerScopeFactory, aRv);
+                     aSharedWorkerName, aLoadInfo,
+                     aWorkerScopeFactory, aRv);
 }
 
 // static
@@ -5940,6 +5878,7 @@ WorkerPrivate::CreateGlobalScope(JSContext* aCx)
 
   nsRefPtr<WorkerGlobalScope> globalScope;
   globalScope = mGlobalScopeFactory->CreateGlobalScope(this, SharedWorkerName());
+  mGlobalScopeFactory = nullptr; // don't need this any more
 
   JS::Rooted<JSObject*> global(aCx, globalScope->WrapGlobalObject(aCx));
   NS_ENSURE_TRUE(global, nullptr);

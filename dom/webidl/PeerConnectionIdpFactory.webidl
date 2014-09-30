@@ -8,5 +8,5 @@ interface PeerConnectionIdpFactory
   /* Makes a worker for the IdP, inserts a message port into the worker
    *  and hands back the corresponding port on this side. */
   [Throws]
-  static MessagePort createIdpInstance(DOMString uri);
+  static MessagePort createIdpInstance(DOMString uri, DOMString name);
 };

@@ -64,7 +64,7 @@ function test_success_response(done) {
 
   function handleResponse(response) {
     is(SpecialPowers.wrap(response).type, "SUCCESS", "IdP responds with SUCCESS");
-    idp.close();
+    idp.stop();
     done();
   }
 
@@ -79,7 +79,7 @@ function test_error_response(done) {
 
   function handleResponse(response) {
     is(SpecialPowers.wrap(response).type, "ERROR", "IdP should produce ERROR");
-    idp.close();
+    idp.stop();
     done();
   }
 
@@ -95,7 +95,7 @@ function test_delayed_response(done) {
   function handleResponse(response) {
     is(SpecialPowers.wrap(response).type, "SUCCESS",
        "IdP should handle delayed response");
-    idp.close();
+    idp.stop();
     done();
   }
 

@@ -2192,10 +2192,6 @@ RuntimeService::ResumeWorkersForWindow(nsPIDOMWindow* aWindow)
 }
 
 
-nsRefPtr<WorkerGlobalScopeFactory>
-SharedWorkerGlobalScopeFactory::instance = new SharedWorkerGlobalScopeFactory();
-
-
 already_AddRefed<WorkerGlobalScope>
 SharedWorkerGlobalScopeFactory::CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
                                                   const nsACString& aWorkerName)
@@ -2214,13 +2210,10 @@ RuntimeService::CreateSharedWorker(const GlobalObject& aGlobal,
                    SharedWorker** aSharedWorker)
 {
   nsRefPtr<WorkerGlobalScopeFactory> scopeFactory = aGlobalScopeFactory
-    ? aGlobalScopeFactory : SharedWorkerGlobalScopeFactory::instance;
+    ? aGlobalScopeFactory : SharedWorkerGlobalScopeFactory::Instance();
   return CreateSharedWorkerInternal(aGlobal, aScriptURL, aName, WorkerTypeShared,
                                     scopeFactory, aSharedWorker);
 }
-
-nsRefPtr<WorkerGlobalScopeFactory>
-ServiceWorkerGlobalScopeFactory::instance = new ServiceWorkerGlobalScopeFactory();
 
 already_AddRefed<WorkerGlobalScope>
 ServiceWorkerGlobalScopeFactory::CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
@@ -2244,9 +2237,10 @@ RuntimeService::CreateServiceWorker(const GlobalObject& aGlobal,
   MOZ_ASSERT(window);
 
   nsRefPtr<SharedWorker> sharedWorker;
+  nsRefPtr<WorkerGlobalScopeFactory> factory
+    = ServiceWorkerGlobalScopeFactory::Instance();
   rv = CreateSharedWorkerInternal(aGlobal, aScriptURL, aScope,
-                                  WorkerTypeService,
-                                  ServiceWorkerGlobalScopeFactory::instance,
+                                  WorkerTypeService, factory,
                                   getter_AddRefs(sharedWorker));
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -2271,9 +2265,10 @@ RuntimeService::CreateServiceWorkerFromLoadInfo(JSContext* aCx,
                                                 ServiceWorker** aServiceWorker)
 {
   nsRefPtr<SharedWorker> sharedWorker;
+  nsRefPtr<WorkerGlobalScopeFactory> factory
+    = ServiceWorkerGlobalScopeFactory::Instance();
   nsresult rv = CreateSharedWorkerFromLoadInfo(aCx, aLoadInfo, aScriptURL, aScope,
-                                               WorkerTypeService,
-                                               ServiceWorkerGlobalScopeFactory::instance,
+                                               WorkerTypeService, factory,
                                                getter_AddRefs(sharedWorker));
 
   if (NS_WARN_IF(NS_FAILED(rv))) {

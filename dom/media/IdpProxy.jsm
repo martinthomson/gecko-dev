@@ -25,6 +25,7 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
  *
  * @param win (object) the hosting window
  * @param uri (string) path to load
+ * @param name (string) name of the worker
  * @param messageCallback (function) callback to invoke on the arrival
  *     of messages from the IdP
  */
@@ -48,13 +49,15 @@ IdpChannel.prototype = {
 
     this.active = true;
     let factory = this.window.PeerConnectionIdpFactory;
-    this.port = factory.createIdpInstance(this.source);
+    this.port = factory.createIdpInstance(this.source, this.randomName());
     this.port.onmessage = msg => {
+      dump('browser<' + JSON.stringify(msg.data) + '\n');
       this.messageCallback(msg.data);
     };
   },
 
   send: function(msg) {
+    dump('browser>' + JSON.stringify(msg) + '\n');
     this.port.postMessage(msg);
   },
 
@@ -64,6 +67,18 @@ IdpChannel.prototype = {
     }
     this.port = null;
     this.active = false;
+  },
+
+  randomName: function() {
+    // we need to use a randomized name to avoid worker reuse
+    // which is bad for workers generally, but useful here
+    let rndm = this.window.crypto.getRandomValues(new Uint8Array(12));
+    let name = "WebRTCIdP-";
+    for (let i = 0; i < rndm.length; ++i) {
+      if (rndm[i] < 16) { name += '0'; }
+      name += rndm[i].toString(16);
+    }
+    return name;
   }
 };
 
@@ -133,7 +148,7 @@ IdpProxy.validateProtocol = function(protocol) {
 IdpProxy.prototype = {
   _reset: function() {
     this.channel = null;
-    this.ready = false;
+    this.ready = true; // TODO test this
 
     this.counter = 0;
     this.tracking = {};
@@ -212,7 +227,7 @@ IdpProxy.prototype = {
   /**
    * Performs cleanup.  The object should be OK to use again.
    */
-  close: function() {
+  stop: function() {
     if (!this.channel) {
       return;
     }

@@ -42,7 +42,7 @@ function theTest() {
     "GET_IDENTITY_ASSERTION_FIRES_EVENTUALLY_AND_SUBSEQUENTLY",
     function(test) {
       var fired = 0;
-      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js);
+      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js');
       test.pcLocal._pc.onidentityresult = function(e) {
         fired++;
         if (fired == 1) {
@@ -95,7 +95,7 @@ function theTest() {
   [
     "GET_IDENTITY_ASSERTION_WITH_SPECIFIC_NAME",
     function(test) {
-      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js, 'user@example.com');
+      test.setIdentityProvider(test.pcLocal, 'example.com', 'idp.js', 'user@example.com');
       test.pcLocal._pc.onidentityresult = function(e) {
         checkIdentity(e.assertion, 'user@example.com');
         test.next();

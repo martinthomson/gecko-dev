@@ -56,6 +56,10 @@ runNetworkTest(function () {
           // have to let the other event handler have a chance to record success
           // before we run the checks that rely on that recording
           test.pcLocal._pc.onidpvalidationerror = setTimeout.bind(window, checkEvents, 1);
+          test.pcLocal._pc.onpeeridentity = function(e) {
+            ok(false, "should not have gotten a successful result");
+            test.next();
+          }
         }
       }
     ],

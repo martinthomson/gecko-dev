@@ -211,15 +211,15 @@ MessagePort::CloseInternal()
   MOZ_ASSERT(!IsClosed());
   MOZ_ASSERT_IF(mStarted, mQueuedEvents.IsEmpty());
 
-  NS_WARN_IF_FALSE(mStarted, "Called close() before start()!");
-
   if (!mStarted) {
     mQueuedEvents.Clear();
   }
 
   if (mWorkerPrivate) {
+    mWorkerPrivate->DisconnectMessagePort(Serial());
+  } else {
     AutoSafeJSContext cx;
-    mWorkerPrivate->UnregisterMessagePort(cx, this);
+    mSharedWorker->GetWorkerPrivate()->UnregisterMessagePort(cx, this);
   }
 
   mSharedWorker = nullptr;

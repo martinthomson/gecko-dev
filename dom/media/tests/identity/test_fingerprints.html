@@ -24,11 +24,11 @@ function getIdentityAssertion(fingerprints, callback) {
     is(wrappedResponse.type, "SUCCESS",
        "IdP provided successful response");
     var assertion = btoa(JSON.stringify(wrappedResponse.message));
-    idp.close();
+    idp.stop();
     callback(assertion);
   }
 
-  idp = new IdpProxy("example.com", "idp.js");
+  idp = new IdpProxy(window, "example.com", "idp.js");
   idp.start(handleFailure);
   idp.send({
     type: "SIGN",
