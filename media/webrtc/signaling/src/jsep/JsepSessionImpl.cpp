@@ -49,13 +49,7 @@ class JsepMediaStreamTrackRemote : public JsepMediaStreamTrack {
 // TODO(ekr@rtfm.com): Add state checks. Issue 154
 
 JsepSessionImpl::~JsepSessionImpl() {
-  for (auto i = mNegotiatedTrackPairs.begin();
-       i != mNegotiatedTrackPairs.end();
-       ++i) {
-    delete *i;
-  }
-  mNegotiatedTrackPairs.clear();
-
+  ClearNegotiatedPairs();
   for (auto i = mCodecs.begin(); i != mCodecs.end(); ++i) {
     delete *i;
   }
@@ -632,7 +626,6 @@ nsresult JsepSessionImpl::HandleNegotiatedSession(const UniquePtr<Sdp>& local,
     }
 
     rv = SetupTransport(rm.GetAttributeList(),
-                        offer.GetAttributeList(),
                         answer.GetAttributeList(),
                         is_offerer,
                         transport);
@@ -652,7 +645,6 @@ nsresult JsepSessionImpl::HandleNegotiatedSession(const UniquePtr<Sdp>& local,
     } else {
       MOZ_MTLOG(ML_DEBUG, "RTCP-MUX is off");
       rv = SetupTransport(rm.GetAttributeList(),
-                          offer.GetAttributeList(),
                           answer.GetAttributeList(),
                           is_offerer,
                           transport);
@@ -739,7 +731,6 @@ nsresult JsepSessionImpl::CreateTransport(const SdpMediaSection& msection,
 }
 
 nsresult JsepSessionImpl::SetupTransport(const SdpAttributeList& remote,
-                                         const SdpAttributeList& offer,
                                          const SdpAttributeList& answer,
                                          bool is_offerer,
                                          const RefPtr<JsepTransport>&
@@ -1057,9 +1048,10 @@ void JsepSessionImpl::SetState(JsepSignalingState state) {
   mState = state;
 }
 
-nsresult JsepSessionImpl::AddIceCandidate(const std::string& candidate,
-                                          const std::string& mid,
-                                          uint16_t level) {
+nsresult
+JsepSessionImpl::AddIceCandidate(const std::string& candidate,
+                                 const std::string& mid,
+                                 uint16_t level) {
   mozilla::Sdp* sdp = 0;
 
   if (mPendingRemoteDescription) {

@@ -1410,7 +1410,7 @@ PeerConnectionImpl::SetRemoteDescription(int32_t action, const char* aSDP)
 
   }
   nsresult nrv = mJsepSession->SetRemoteDescription(sdpType,
-                                                   mRemoteRequestedSDP);
+                                                    mRemoteRequestedSDP);
   if (NS_FAILED(nrv)) {
     Error error;
     switch (nrv) {

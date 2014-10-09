@@ -10,6 +10,7 @@
 #include <vector>
 #include <ostream>
 #include <sstream>
+#include <cstring>
 
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Attributes.h"
