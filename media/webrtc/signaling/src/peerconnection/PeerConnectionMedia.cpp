@@ -434,11 +434,10 @@ PeerConnectionMedia::UpdateIceMediaStream_s(size_t index,
   }
 
   if (has_attrs) {
-    std::vector<std::string> attrs;
+    std::vector<std::string> attrs(candidates.begin(), candidates.end());
     attrs.push_back("ice-ufrag:" + ufrag);
     attrs.push_back("ice-pwd:" + password);
 
-    // TODO(ekr@rtfm.com):Add non-trickle candidates. Issue 184.
     nsresult rv = stream->ParseAttributes(attrs);
     if (NS_FAILED(rv)) {
       CSFLogError(logTag, "Couldn't parse ICE attributes");

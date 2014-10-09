@@ -1055,23 +1055,19 @@ class SignalingAgent {
   }
 
   bool OfferContains(const std::string& str) {
-    std::string o(offer());
-
-    return o.find(str) != std::string::npos;
+    return offer().find(str) != std::string::npos;
   }
 
   bool AnswerContains(const std::string& str) {
-    std::string o(answer());
-
-    return o.find(str) != std::string::npos;
+    return answer().find(str) != std::string::npos;
   }
 
   size_t MatchingCandidates(const std::string& cand) {
     return pObserver->MatchingCandidates(cand);
   }
 
-  const char* offer() const { return offer_.c_str(); }
-  const char* answer() const { return answer_.c_str(); }
+  const std::string& offer() const { return offer_; }
+  const std::string& answer() const { return answer_; }
 
   std::string getLocalDescription() const {
     char *sdp = nullptr;
@@ -1152,9 +1148,15 @@ class SignalingAgent {
     pObserver->state = TestObserver::stateNoResponse;
     ASSERT_EQ(pc->CreateOffer(options), NS_OK);
     ASSERT_EQ(pObserver->state, TestObserver::stateSuccess);
-    SDPSanityCheck(pObserver->lastString.c_str(), sdpCheck, true);
+    SDPSanityCheck(pObserver->lastString, sdpCheck, true);
     ASSERT_EQ(signaling_state(), endState);
     offer_ = pObserver->lastString;
+  }
+
+  // sets the answer to match the local description
+  // which isn't good if you are the answerer
+  void UpdateOffer() {
+    offer_ = getLocalDescription();
   }
 
   void CreateAnswer(uint32_t offerAnswerFlags,
@@ -1182,6 +1184,12 @@ class SignalingAgent {
     ASSERT_EQ(signaling_state(), endState);
 
     answer_ = pObserver->lastString;
+  }
+
+  // sets the answer to match the local description
+  // which isn't good if you are the offerer
+  void UpdateAnswer() {
+    answer_ = getLocalDescription();
   }
 
   // At present, we use the hints field in a stream to find and
@@ -1265,8 +1273,8 @@ class SignalingAgent {
     return pc->IceConnectionState() == PCImplIceConnectionState::Connected;
   }
 
-  void AddIceCandidateStr(std::string candidate, std::string mid,
-                       unsigned short level) {
+  void AddIceCandidateStr(const std::string& candidate, const std::string& mid,
+                          unsigned short level) {
     if (getRemoteDescription().empty()) {
       // Not time to add this, because the unit-test code hasn't set the
       // description yet.
@@ -1724,6 +1732,10 @@ public:
     EnsureInit();
     a1_->CreateOffer(options, offerAnswerFlags, offerSdpCheck);
     a1_->SetLocal(TestObserver::OFFER, a1_->offer());
+    if (!(trickleType & OFFERER_TRICKLES)) {
+      a1_->WaitForGather();
+      a1_->UpdateOffer();
+    }
     a2_->SetRemote(TestObserver::OFFER, a1_->offer());
   }
 
@@ -1734,6 +1746,10 @@ public:
 
     a2_->CreateAnswer(offerAnswerFlags, answerSdpCheck);
     a2_->SetLocal(TestObserver::ANSWER, a2_->answer());
+    if (!(trickleType & ANSWERER_TRICKLES)) {
+      a2_->WaitForGather();
+      a2_->UpdateAnswer();
+    }
     a1_->SetRemote(TestObserver::ANSWER, a2_->answer());
   }
 
