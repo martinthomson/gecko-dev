@@ -24,7 +24,7 @@
 #include "signaling/src/sdp/SipccSdpParser.h"
 #include "signaling/src/jsep/JsepCodecDescription.h"
 #include "signaling/src/jsep/JsepMediaStreamTrack.h"
-#include "signaling/src/jsep/JsepMediaStreamTrackFake.h"
+#include "signaling/src/jsep/JsepMediaStreamTrackStatic.h"
 #include "signaling/src/jsep/JsepSession.h"
 #include "signaling/src/jsep/JsepSessionImpl.h"
 #include "signaling/src/jsep/JsepTrack.h"
@@ -33,7 +33,7 @@ using mozilla::jsep::JsepSession;
 using mozilla::jsep::JsepSessionImpl;
 using mozilla::jsep::JsepOfferOptions;
 using mozilla::jsep::JsepAnswerOptions;
-using mozilla::jsep::JsepMediaStreamTrackFake;
+using mozilla::jsep::JsepMediaStreamTrackStatic;
 using mozilla::jsep::JsepMediaStreamTrack;
 using mozilla::jsep::JsepTrackPair;
 using mozilla::jsep::JsepCodecDescription;
@@ -58,12 +58,28 @@ class JsepSessionTestBase : public ::testing::Test {
 
 };
 
+class FakeUuidGenerator : public mozilla::jsep::JsepUuidGenerator {
+ public:
+  bool Generate(std::string* str) {
+    std::ostringstream os;
+    os << "FAKE_UUID_" << ++ctr;
+    *str = os.str();
+
+    return true;
+  }
+
+ private:
+  static uint64_t ctr;
+};
+
+uint64_t FakeUuidGenerator::ctr = 1000;
+
 class JsepSessionTest : public JsepSessionTestBase,
                         public ::testing::WithParamInterface<std::string> {
  public:
   JsepSessionTest() :
-      mSessionOff("Offerer"),
-      mSessionAns("Answerer") {
+      mSessionOff("Offerer", MakeUnique<FakeUuidGenerator>()),
+      mSessionAns("Answerer", MakeUnique<FakeUuidGenerator>()) {
     AddTransportData(&mSessionOff, &mOffererTransport);
     AddTransportData(&mSessionAns, &mAnswererTransport);
   }
@@ -151,9 +167,17 @@ protected:
 
   void AddTracks(JsepSessionImpl* side,
                  const std::vector<SdpMediaSection::MediaType>& mediatypes) {
+    FakeUuidGenerator uuid_gen;
+    std::string stream_id;
+    std::string track_id;
+
+    ASSERT_TRUE(uuid_gen.Generate(&stream_id));
+    ASSERT_TRUE(uuid_gen.Generate(&track_id));
+
+
     for (auto track = mediatypes.begin(); track != mediatypes.end(); ++track) {
-      RefPtr<JsepMediaStreamTrack> mst(new JsepMediaStreamTrackFake(
-            *track));
+      RefPtr<JsepMediaStreamTrack> mst(new JsepMediaStreamTrackStatic(
+          *track, stream_id, track_id));
       side->AddTrack(mst);
     }
   }
@@ -641,11 +665,18 @@ TEST_F(JsepSessionTest, OfferAnswerSendOnlyLines) {
 }
 
 TEST_F(JsepSessionTest, CreateOfferNoDatachannelDefault) {
-  RefPtr<JsepMediaStreamTrack> msta(new JsepMediaStreamTrackFake(
-      SdpMediaSection::kAudio));
+  FakeUuidGenerator uuid_gen;
+  std::string stream_id;
+  std::string track_id;
+
+  ASSERT_TRUE(uuid_gen.Generate(&stream_id));
+  ASSERT_TRUE(uuid_gen.Generate(&track_id));
+  RefPtr<JsepMediaStreamTrack> msta(new JsepMediaStreamTrackStatic(
+      SdpMediaSection::kAudio, stream_id, track_id));
   mSessionOff.AddTrack(msta);
-  RefPtr<JsepMediaStreamTrack> mstv1(new JsepMediaStreamTrackFake(
-      SdpMediaSection::kVideo));
+  ASSERT_TRUE(uuid_gen.Generate(&track_id));
+  RefPtr<JsepMediaStreamTrack> mstv1(new JsepMediaStreamTrackStatic(
+      SdpMediaSection::kVideo, stream_id, track_id));
   mSessionOff.AddTrack(mstv1);
 
   std::string offer = CreateOffer();
@@ -665,11 +696,11 @@ TEST_F(JsepSessionTest, ValidateOfferedCodecParams) {
   types.push_back(SdpMediaSection::kAudio);
   types.push_back(SdpMediaSection::kVideo);
 
-  RefPtr<JsepMediaStreamTrack> msta(new JsepMediaStreamTrackFake(
-      SdpMediaSection::kAudio));
+  RefPtr<JsepMediaStreamTrack> msta(new JsepMediaStreamTrackStatic(
+      SdpMediaSection::kAudio, "offerer_stream", "a1"));
   mSessionOff.AddTrack(msta);
-  RefPtr<JsepMediaStreamTrack> mstv1(new JsepMediaStreamTrackFake(
-      SdpMediaSection::kVideo));
+  RefPtr<JsepMediaStreamTrack> mstv1(new JsepMediaStreamTrackStatic(
+      SdpMediaSection::kVideo, "offerer_stream", "v2"));
   mSessionOff.AddTrack(mstv1);
 
   std::string offer = CreateOffer();
@@ -771,22 +802,22 @@ TEST_F(JsepSessionTest, ValidateAnsweredCodecParams) {
   types.push_back(SdpMediaSection::kAudio);
   types.push_back(SdpMediaSection::kVideo);
 
-  RefPtr<JsepMediaStreamTrack> msta(new JsepMediaStreamTrackFake(
-      SdpMediaSection::kAudio));
+  RefPtr<JsepMediaStreamTrack> msta(new JsepMediaStreamTrackStatic(
+      SdpMediaSection::kAudio, "offerer_stream", "a1"));
   mSessionOff.AddTrack(msta);
-  RefPtr<JsepMediaStreamTrack> mstv1(new JsepMediaStreamTrackFake(
-      SdpMediaSection::kVideo));
+  RefPtr<JsepMediaStreamTrack> mstv1(new JsepMediaStreamTrackStatic(
+      SdpMediaSection::kVideo, "offerer_stream", "v1"));
   mSessionOff.AddTrack(mstv1);
 
   std::string offer = CreateOffer();
   SetLocalOffer(offer);
   SetRemoteOffer(offer);
 
-  RefPtr<JsepMediaStreamTrack> msta_ans(new JsepMediaStreamTrackFake(
-      SdpMediaSection::kAudio));
+  RefPtr<JsepMediaStreamTrack> msta_ans(new JsepMediaStreamTrackStatic(
+      SdpMediaSection::kAudio, "answerer_stream", "a1"));
   mSessionAns.AddTrack(msta);
-  RefPtr<JsepMediaStreamTrack> mstv1_ans(new JsepMediaStreamTrackFake(
-      SdpMediaSection::kVideo));
+  RefPtr<JsepMediaStreamTrack> mstv1_ans(new JsepMediaStreamTrackStatic(
+      SdpMediaSection::kVideo, "answerer_stream", "v1"));
   mSessionAns.AddTrack(mstv1);
 
   std::string answer = CreateAnswer();

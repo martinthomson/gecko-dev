@@ -5,6 +5,7 @@
 #ifndef _JSEPMEDIASTREAMTRACKFAKE_H_
 #define _JSEPMEDIASTREAMTRACKFAKE_H_
 
+#include <string>
 #include <mozilla/RefPtr.h>
 #include "nsCOMPtr.h"
 
@@ -13,19 +14,33 @@
 namespace mozilla {
 namespace jsep {
 
-class JsepMediaStreamTrackFake : public JsepMediaStreamTrack {
+class JsepMediaStreamTrackStatic : public JsepMediaStreamTrack {
  public:
-  JsepMediaStreamTrackFake(mozilla::SdpMediaSection::MediaType type) :
-      mType(type) {}
+JsepMediaStreamTrackStatic(mozilla::SdpMediaSection::MediaType type,
+                           const std::string& streamid,
+                           const std::string& trackid)
+    : mType(type),
+      mStreamId(streamid),
+      mTrackId(trackid) {}
 
   virtual mozilla::SdpMediaSection::MediaType media_type() const MOZ_OVERRIDE {
     return mType;
   }
 
- private:
-  virtual ~JsepMediaStreamTrackFake() {}
+  virtual const std::string& stream_id() const MOZ_OVERRIDE {
+    return mStreamId;
+  }
 
-  mozilla::SdpMediaSection::MediaType mType;
+  virtual const std::string& track_id() const MOZ_OVERRIDE {
+    return mTrackId;
+  }
+
+ private:
+  virtual ~JsepMediaStreamTrackStatic() {}
+
+  const mozilla::SdpMediaSection::MediaType mType;
+  const std::string mStreamId;
+  const std::string mTrackId;
 };
 
 }  // namespace jsep

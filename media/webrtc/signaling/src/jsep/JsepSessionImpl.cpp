@@ -16,6 +16,7 @@
 #include <mozilla/Move.h>
 #include <mozilla/UniquePtr.h>
 
+#include "signaling/src/jsep/JsepMediaStreamTrackStatic.h"
 #include "signaling/src/jsep/JsepTrack.h"
 #include "signaling/src/jsep/JsepTrackImpl.h"
 #include "signaling/src/jsep/JsepTransport.h"
@@ -28,23 +29,6 @@ namespace mozilla {
 namespace jsep {
 
 MOZ_MTLOG_MODULE("jsep")
-
-
-// Represents a remote track. Only exposed via the abstract interface.
-class JsepMediaStreamTrackRemote : public JsepMediaStreamTrack {
- public:
-  JsepMediaStreamTrackRemote(mozilla::SdpMediaSection::MediaType type) :
-      mType(type) {}
-
-  virtual mozilla::SdpMediaSection::MediaType media_type() const MOZ_OVERRIDE {
-    return mType;
-  }
-
- private:
-  virtual ~JsepMediaStreamTrackRemote() {}
-
-  mozilla::SdpMediaSection::MediaType mType;
-};
 
 JsepSessionImpl::~JsepSessionImpl() {
   ClearNegotiatedPairs();
@@ -669,6 +653,8 @@ nsresult JsepSessionImpl::HandleNegotiatedSession(const UniquePtr<Sdp>& local,
     }
     transport = mTransports[i];
 
+    // TODO(ekr@rtfm.com): What if direction attribute is missing?
+
     // If the answer says it's inactive we're not doing anything with it.
     // TODO(ekr@rtfm.com): Need to handle renegotiation somehow. Issue 155.
     if (answer.GetDirectionAttribute().mValue ==
@@ -1003,16 +989,33 @@ nsresult JsepSessionImpl::SetRemoteDescriptionAnswer(
                                         mPendingRemoteDescription);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  SetRemoteTracksFromDescription(*mPendingRemoteDescription);
+  rv = SetRemoteTracksFromDescription(*mPendingRemoteDescription);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   mCurrentRemoteDescription = Move(mPendingRemoteDescription);
   mCurrentLocalDescription = Move(mPendingLocalDescription);
+
+  // Now iterate over the negotiated track pairs and make the
+  // remote streams.
+  for (auto tp = mNegotiatedTrackPairs.begin();
+       tp != mNegotiatedTrackPairs.end(); ++tp) {
+    auto track = *tp;
+
+    // If we have a receiving track and it hasn't been assigned to an
+    // MST, this means that it's new.
+    if (track->mReceiving && !track->mReceiving->media_stream_track()) {
+      rv = CreateReceivingTrack(
+          track->mLevel,
+          mCurrentRemoteDescription->GetMediaSection(track->mLevel));
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+  }
 
   SetState(kJsepStateStable);
   return NS_OK;
 }
 
-void JsepSessionImpl::SetRemoteTracksFromDescription(
+nsresult JsepSessionImpl::SetRemoteTracksFromDescription(
     const Sdp& remote_description) {
   size_t num_m_lines = remote_description.GetMediaSectionCount();
 
@@ -1022,13 +1025,35 @@ void JsepSessionImpl::SetRemoteTracksFromDescription(
 
     if (direction == SdpDirectionAttribute::kSendrecv ||
         direction == SdpDirectionAttribute::kSendonly) {
-      JsepMediaStreamTrackRemote* remote = new JsepMediaStreamTrackRemote(
-          msection.GetMediaType());
-      JsepReceivingTrack rtrack;
-      rtrack.mTrack = remote;
-      mRemoteTracks.push_back(rtrack);
+      nsresult rv = CreateReceivingTrack(i, msection);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
   }
+
+  return NS_OK;
+}
+
+nsresult JsepSessionImpl::CreateReceivingTrack(
+  size_t m_line,
+  const SdpMediaSection& msection) {
+  std::string stream_id;
+  std::string track_id;
+
+  // Generate random ids. TODO(ekr@rtfm.com): Pull these out of SDP if
+  // available.
+  if (!mUuidGen->Generate(&stream_id))
+    return NS_ERROR_FAILURE;
+  if (!mUuidGen->Generate(&track_id))
+    return NS_ERROR_FAILURE;
+
+  JsepMediaStreamTrackStatic* remote = new JsepMediaStreamTrackStatic(
+    msection.GetMediaType(), stream_id, track_id);
+  JsepReceivingTrack rtrack;
+  rtrack.mTrack = remote;
+  rtrack.mAssignedMLine = Some(m_line);
+  mRemoteTracks.push_back(rtrack);
+
+  return NS_OK;
 }
 
 nsresult JsepSessionImpl::CreateGenericSDP(UniquePtr<Sdp>* sdpp) {

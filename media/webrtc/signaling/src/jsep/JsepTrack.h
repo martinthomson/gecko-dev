@@ -36,6 +36,7 @@ class JsepTrack {
   virtual nsresult get_codec(size_t index,
                              const JsepCodecDescription** config)
       const = 0;
+  virtual RefPtr<JsepMediaStreamTrack> media_stream_track() const = 0;
 };
 
 

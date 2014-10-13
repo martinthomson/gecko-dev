@@ -42,6 +42,7 @@
 #include "dtlsidentity.h"
 #include "signaling/src/sdp/SdpAttribute.h"
 
+#include "signaling/src/jsep/JsepMediaStreamTrackStatic.h"
 #include "signaling/src/jsep/JsepSession.h"
 #include "signaling/src/jsep/JsepSessionImpl.h"
 
@@ -288,6 +289,28 @@ PeerConnectionImpl::WrapObject(JSContext* aCx)
   return PeerConnectionImplBinding::Wrap(aCx, this);
 }
 #endif
+
+bool PCUuidGenerator::Generate(std::string* idp) {
+  nsresult rv;
+
+  if(!mGenerator) {
+    mGenerator = do_GetService("@mozilla.org/uuid-generator;1", &rv);
+  if (NS_FAILED(rv))
+    return false;
+  if (!mGenerator)
+    return false;
+  }
+
+  nsID id;
+  rv = mGenerator->GenerateUUIDInPlace(&id);
+  if (NS_FAILED(rv))
+    return false;
+  char buffer[NSID_LENGTH];
+  id.ToProvidedString(buffer);
+  idp->assign(buffer);
+
+  return true;
+}
 
 struct PeerConnectionImpl::Internal {
 };
@@ -680,7 +703,8 @@ PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
     return NS_ERROR_FAILURE;
   }
 
-  mJsepSession = MakeUnique<JsepSessionImpl>(mName);
+  mJsepSession = MakeUnique<JsepSessionImpl>(mName,
+                                             MakeUnique<PCUuidGenerator>());
 
   res = mJsepSession->SetIceCredentials(mMedia->ice_ctx()->ufrag(),
                                         mMedia->ice_ctx()->pwd());
@@ -1092,8 +1116,19 @@ PeerConnectionImpl::CreateDataChannel(const nsAString& aLabel,
   CSFLogDebug(logTag, "%s: making DOMDataChannel", __FUNCTION__);
 
   if (!mHaveDataStream) {
+
+    std::string stream_id;
+    std::string track_id;
+
+    // Generate random ids.
+    if (!mUuidGen->Generate(&stream_id))
+      return NS_ERROR_FAILURE;
+    if (!mUuidGen->Generate(&track_id))
+      return NS_ERROR_FAILURE;
+
     rv = mJsepSession->AddTrack(
-        new PeerConnectionJsepMST(mozilla::SdpMediaSection::kApplication));
+        new JsepMediaStreamTrackStatic(mozilla::SdpMediaSection::kApplication,
+                                       stream_id, track_id));
     if (NS_FAILED(rv)) {
       CSFLogError(logTag, "%s: Failed to add application track.",
                           __FUNCTION__);
@@ -1473,7 +1508,7 @@ PeerConnectionImpl::SetRemoteDescription(int32_t action, const char* aSDP)
                       // want mismatches. Issue 175.
       }
     } else {
-      info = mMedia->GetRemoteStream(0);
+      info = mMedia->GetRemoteStreamByIndex(0);
     }
     DOMMediaStream* stream = info->GetMediaStream();
 
@@ -1765,7 +1800,7 @@ PeerConnectionImpl::AddTrack(MediaStreamTrack& aTrack,
 
   uint32_t num = mMedia->LocalStreamsLength();
 
-  uint32_t stream_id;
+  std::string stream_id;
   nsresult res = mMedia->AddStream(&aMediaStream, hints, &stream_id);
   if (NS_FAILED(res)) {
     return res;
@@ -1777,8 +1812,8 @@ PeerConnectionImpl::AddTrack(MediaStreamTrack& aTrack,
 
   // TODO(ekr@rtfm.com): these integers should be the track IDs. Issue 167.
   if (hints & DOMMediaStream::HINT_CONTENTS_AUDIO) {
-    res = mJsepSession->AddTrack(new PeerConnectionJsepMST(
-        mozilla::SdpMediaSection::kAudio));
+    res = mJsepSession->AddTrack(new JsepMediaStreamTrackStatic(
+        mozilla::SdpMediaSection::kAudio, stream_id, "audio_track_id"));
     if (NS_FAILED(res)) {
       std::string error_string = mJsepSession->last_error();
       CSFLogError(logTag, "%s (audio) : pc = %s, error = %s",
@@ -1789,8 +1824,8 @@ PeerConnectionImpl::AddTrack(MediaStreamTrack& aTrack,
   }
 
   if (hints & DOMMediaStream::HINT_CONTENTS_VIDEO) {
-    res = mJsepSession->AddTrack(new PeerConnectionJsepMST(
-        mozilla::SdpMediaSection::kVideo));
+    res = mJsepSession->AddTrack(new JsepMediaStreamTrackStatic(
+        mozilla::SdpMediaSection::kVideo, stream_id, "video_track_id"));
     if (NS_FAILED(res)) {
       std::string error_string = "Error"; // TODO(ekr@rtfm.com): Fill in. Issue 177.
       CSFLogError(logTag, "%s (video) : pc = %s, error = %s",
@@ -1804,6 +1839,8 @@ PeerConnectionImpl::AddTrack(MediaStreamTrack& aTrack,
 
 NS_IMETHODIMP
 PeerConnectionImpl::RemoveTrack(MediaStreamTrack& aTrack) {
+  MOZ_CRASH(); // TODO(ekr@rtfm.com): Does this even work?
+#if 0
   PC_AUTO_ENTER_API_CALL(true);
 
   DOMMediaStream *stream = nullptr;
@@ -1860,6 +1897,7 @@ PeerConnectionImpl::RemoveTrack(MediaStreamTrack& aTrack) {
     mNumVideoStreams--;
   }
 #endif
+#endif
   return NS_OK;
 }
 
@@ -1893,7 +1931,7 @@ PeerConnectionImpl::ReplaceTrack(MediaStreamTrack& aThisTrack,
 
   bool success = false;
   for(uint32_t i = 0; i < media()->LocalStreamsLength(); ++i) {
-    LocalSourceStreamInfo *info = media()->GetLocalStream(i);
+    LocalSourceStreamInfo *info = media()->GetLocalStreamByIndex(i);
     // XXX use type instead of TrackID - bug 1056650
     int pipeline = info->HasTrackType(&aStream, !!(aThisTrack.AsVideoStreamTrack()));
     if (pipeline >= 0) {
@@ -2191,7 +2229,7 @@ PeerConnectionImpl::ShutdownMedia()
 #ifdef MOZILLA_INTERNAL_API
   // before we destroy references to local streams, detach from them
   for(uint32_t i = 0; i < media()->LocalStreamsLength(); ++i) {
-    LocalSourceStreamInfo *info = media()->GetLocalStream(i);
+    LocalSourceStreamInfo *info = media()->GetLocalStreamByIndex(i);
     info->GetMediaStream()->RemovePrincipalChangeObserver(this);
   }
 
@@ -2626,9 +2664,10 @@ PeerConnectionImpl::BuildStatsQuery_m(
   // Gather up pipelines from mMedia so they may be inspected on STS
 
   for (int i = 0, len = mMedia->LocalStreamsLength(); i < len; i++) {
-    auto& pipelines = mMedia->GetLocalStream(i)->GetPipelines();
+    auto& pipelines = mMedia->GetLocalStreamByIndex(i)->GetPipelines();
     if (aSelector) {
-      if (mMedia->GetLocalStream(i)->GetMediaStream()->HasTrack(*aSelector)) {
+      if (mMedia->GetLocalStreamByIndex(i)->GetMediaStream()->
+          HasTrack(*aSelector)) {
         // XXX use type instead of TrackID - bug 1056650
         for (auto it = pipelines.begin(); it != pipelines.end(); ++it) {
           if (it->second->IsVideo() == !!aSelector->AsVideoStreamTrack()) {
@@ -2644,9 +2683,10 @@ PeerConnectionImpl::BuildStatsQuery_m(
   }
 
   for (int i = 0, len = mMedia->RemoteStreamsLength(); i < len; i++) {
-    auto& pipelines = mMedia->GetRemoteStream(i)->GetPipelines();
+    auto& pipelines = mMedia->GetRemoteStreamByIndex(i)->GetPipelines();
     if (aSelector) {
-      if (mMedia->GetRemoteStream(i)->GetMediaStream()->HasTrack(*aSelector)) {
+      if (mMedia->GetRemoteStreamByIndex(i)->
+          GetMediaStream()->HasTrack(*aSelector)) {
         for (auto it = pipelines.begin(); it != pipelines.end(); ++it) {
           if (it->second->trackid() == aSelector->GetTrackID()) {
             query->pipelines.AppendElement(it->second);
@@ -3083,7 +3123,7 @@ PeerConnectionImpl::GetLocalStreams(nsTArray<nsRefPtr<DOMMediaStream > >& result
   PC_AUTO_ENTER_API_CALL_NO_CHECK();
 #ifdef MOZILLA_INTERNAL_API
   for(uint32_t i=0; i < media()->LocalStreamsLength(); i++) {
-    LocalSourceStreamInfo *info = media()->GetLocalStream(i);
+    LocalSourceStreamInfo *info = media()->GetLocalStreamByIndex(i);
     NS_ENSURE_TRUE(info, NS_ERROR_UNEXPECTED);
     result.AppendElement(info->GetMediaStream());
   }
@@ -3099,7 +3139,7 @@ PeerConnectionImpl::GetRemoteStreams(nsTArray<nsRefPtr<DOMMediaStream > >& resul
   PC_AUTO_ENTER_API_CALL_NO_CHECK();
 #ifdef MOZILLA_INTERNAL_API
   for(uint32_t i=0; i < media()->RemoteStreamsLength(); i++) {
-    RemoteSourceStreamInfo *info = media()->GetRemoteStream(i);
+    RemoteSourceStreamInfo *info = media()->GetRemoteStreamByIndex(i);
     NS_ENSURE_TRUE(info, NS_ERROR_UNEXPECTED);
     result.AppendElement(info->GetMediaStream());
   }

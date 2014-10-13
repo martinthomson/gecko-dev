@@ -19,6 +19,8 @@ namespace jsep {
 class JsepMediaStreamTrack {
  public:
   virtual mozilla::SdpMediaSection::MediaType media_type() const = 0;
+  virtual const std::string& stream_id() const = 0;
+  virtual const std::string& track_id() const = 0;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(JsepMediaStreamTrack);
 

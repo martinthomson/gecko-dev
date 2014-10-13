@@ -300,11 +300,11 @@ nsresult MediaPipelineFactory::CreateMediaPipelineReceiving(
     const mozilla::jsep::JsepTrackPair& trackPair,
     const mozilla::UniquePtr<mozilla::jsep::JsepTrack>& track,
     const mozilla::RefPtr<mozilla::MediaSessionConduit>& conduit) {
-  size_t pc_track_id = trackPair.mLevel + 1;
 
   // Find the stream we need
   nsRefPtr<sipcc::RemoteSourceStreamInfo> stream =
-      mPCMedia->GetRemoteStream(0);
+      mPCMedia->GetRemoteStreamById(track->media_stream_track()->
+                                    stream_id());
   MOZ_ASSERT(stream);
   if (!stream) {
     // This should never happen
@@ -322,7 +322,7 @@ nsresult MediaPipelineFactory::CreateMediaPipelineReceiving(
         mPC->GetMainThread().get(),
         mPC->GetSTSThread(),
         stream->GetMediaStream()->GetStream(),
-        pc_track_id,
+        trackPair.mLevel,  // Use the level as the track ID.
         trackPair.mLevel,
         static_cast<AudioSessionConduit*>(conduit.get()),  // Ugly downcast.
         rtp_flow,
@@ -337,7 +337,7 @@ nsresult MediaPipelineFactory::CreateMediaPipelineReceiving(
         mPC->GetMainThread().get(),
         mPC->GetSTSThread(),
         stream->GetMediaStream()->GetStream(),
-        pc_track_id,
+        trackPair.mLevel,   // Use the level as the track ID.
         trackPair.mLevel,
         static_cast<VideoSessionConduit*>(conduit.get()),  // Ugly downcast.
         rtp_flow,
@@ -356,7 +356,7 @@ nsresult MediaPipelineFactory::CreateMediaPipelineReceiving(
     return rv;
   }
 
-  stream->StorePipeline(pc_track_id - 1, false, pipeline);
+  stream->StorePipeline(trackPair.mLevel, false, pipeline);
   return NS_OK;
 }
 
@@ -371,13 +371,13 @@ nsresult MediaPipelineFactory::CreateMediaPipelineSending(
     const mozilla::RefPtr<mozilla::MediaSessionConduit>& conduit) {
   nsresult rv;
 
-  size_t pc_stream_id = 0; // TODO(ekr@rtfm.com). Get real stream/track IDs Issue 167.
-  size_t pc_track_id = trackPair.mLevel + 1; // TODO(ekr@rtfm.com). This isn't right if there are 1-way flows. Issue 167.
-
   nsRefPtr<sipcc::LocalSourceStreamInfo> stream =
-      mPCMedia->GetLocalStream(pc_stream_id);
+      mPCMedia->GetLocalStreamById(track->media_stream_track()->
+                                   stream_id());
+  MOZ_ASSERT(stream);
   if (!stream) {
-    MOZ_MTLOG(ML_ERROR, "Stream not found: " << pc_stream_id);
+    MOZ_MTLOG(ML_ERROR, "Stream not found: "
+              << track->media_stream_track()->stream_id());
     return NS_ERROR_FAILURE;
   }
 
@@ -388,7 +388,7 @@ nsresult MediaPipelineFactory::CreateMediaPipelineSending(
           mPC->GetMainThread().get(),
           mPC->GetSTSThread(),
           stream->GetMediaStream(),
-          pc_track_id,
+          -1,   // TODO(ekr@rtfm.com): Ignored.
           trackPair.mLevel,
           track->media_type() == SdpMediaSection::kVideo,
           conduit, rtp_flow, rtcp_flow);
@@ -429,7 +429,7 @@ nsresult MediaPipelineFactory::CreateMediaPipelineSending(
   }
 #endif
 
-  stream->StorePipeline(pc_track_id - 1, pipeline);
+  stream->StorePipeline(trackPair.mLevel, pipeline);
 
   return NS_OK;
 }

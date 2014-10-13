@@ -45,6 +45,9 @@ class JsepTrackImpl : public JsepTrack {
     *config = mCodecs[index];
     return NS_OK;
   }
+  virtual RefPtr<JsepMediaStreamTrack> media_stream_track() const MOZ_OVERRIDE {
+    return mMediaStreamTrack;
+  }
 
  private:
   // Make these friends to JsepSessionImpl to avoid having to
@@ -56,6 +59,7 @@ class JsepTrackImpl : public JsepTrack {
   mozilla::SdpMediaSection::Protocol mProtocol;
   Maybe<std::string> mBandwidth;
   std::vector<JsepCodecDescription*> mCodecs;
+  RefPtr<JsepMediaStreamTrack> mMediaStreamTrack;
 };
 
 

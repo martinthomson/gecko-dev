@@ -53,6 +53,7 @@ namespace sipcc {
 
 class PeerConnectionImpl;
 class PeerConnectionMedia;
+class PCUuidGenerator;
 
 /* Temporary for providing audio data */
 class Fake_AudioGenerator {
@@ -178,16 +179,20 @@ public:
   typedef mozilla::DOMMediaStream DOMMediaStream;
 
   SourceStreamInfo(DOMMediaStream* aMediaStream,
-                   PeerConnectionMedia *aParent)
+                   PeerConnectionMedia *aParent,
+                   const std::string& aId)
       : mMediaStream(aMediaStream),
-        mParent(aParent) {
+        mParent(aParent),
+        mId(aId) {
     MOZ_ASSERT(mMediaStream);
   }
 
   SourceStreamInfo(already_AddRefed<DOMMediaStream>& aMediaStream,
-                   PeerConnectionMedia *aParent)
+                   PeerConnectionMedia *aParent,
+                   const std::string& aId)
       : mMediaStream(aMediaStream),
-        mParent(aParent) {
+        mParent(aParent),
+        mId(aId) {
     MOZ_ASSERT(mMediaStream);
   }
 
@@ -200,11 +205,13 @@ public:
   const std::map<mozilla::TrackID, mozilla::RefPtr<mozilla::MediaPipeline>>&
   GetPipelines() const { return mPipelines; }
   mozilla::RefPtr<mozilla::MediaPipeline> GetPipelineByLevel_m(int level);
+  const std::string& GetId() const { return mId; }
 
 protected:
   std::map<mozilla::TrackID, mozilla::RefPtr<mozilla::MediaPipeline>> mPipelines;
   nsRefPtr<DOMMediaStream> mMediaStream;
   PeerConnectionMedia *mParent;
+  const std::string& mId;
 };
 
 // TODO(ekr@rtfm.com): Refactor {Local,Remote}SourceStreamInfo
@@ -217,8 +224,9 @@ public:
   typedef mozilla::DOMMediaStream DOMMediaStream;
 
   LocalSourceStreamInfo(DOMMediaStream *aMediaStream,
-                        PeerConnectionMedia *aParent)
-      : SourceStreamInfo(aMediaStream, aParent) {}
+                        PeerConnectionMedia *aParent,
+                        const std::string& aId)
+     : SourceStreamInfo(aMediaStream, aParent, aId) {}
 
   // Returns the mPipelines index for the track or -1.
 #if 0
@@ -231,7 +239,7 @@ public:
   // Note aIndex != aOldTrack!  It's the result of HasTrackType()
   nsresult ReplaceTrack(int aIndex, DOMMediaStream* aNewStream, mozilla::TrackID aNewTrack);
 
-  void StorePipeline(int aTrack,
+  void StorePipeline(int aMLine,
                      mozilla::RefPtr<mozilla::MediaPipelineTransmit> aPipeline);
 
 #ifdef MOZILLA_INTERNAL_API
@@ -263,7 +271,7 @@ class RemoteSourceStreamInfo : public SourceStreamInfo {
 
   RemoteSourceStreamInfo(already_AddRefed<DOMMediaStream> aMediaStream,
                          PeerConnectionMedia *aParent)
-    : SourceStreamInfo(aMediaStream, aParent),
+    : SourceStreamInfo(aMediaStream, aParent, "unnamed"),
       mTrackTypeHints(0) {}
 
   void StorePipeline(int aTrack, bool aIsVideo,
@@ -335,7 +343,7 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
 
   // Add a stream (main thread only)
   nsresult AddStream(nsIDOMMediaStream* aMediaStream, uint32_t hints,
-                     uint32_t *stream_id);
+                     std::string* stream_id);
 
   // Remove a stream (main thread only)
   nsresult RemoveStream(nsIDOMMediaStream* aMediaStream,
@@ -347,14 +355,17 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   {
     return mLocalSourceStreams.Length();
   }
-  LocalSourceStreamInfo* GetLocalStream(int index);
+  LocalSourceStreamInfo* GetLocalStreamByIndex(int index);
+  LocalSourceStreamInfo* GetLocalStreamById(const std::string& id);
 
   // Get a specific remote stream
   uint32_t RemoteStreamsLength()
   {
     return mRemoteSourceStreams.Length();
   }
-  RemoteSourceStreamInfo* GetRemoteStream(int index);
+
+  RemoteSourceStreamInfo* GetRemoteStreamByIndex(int index);
+  RemoteSourceStreamInfo* GetRemoteStreamById(const std::string& id);
 
   bool SetUsingBundle_m(int level, bool decision);
   bool UpdateFilterFromRemoteDescription_m(
@@ -509,6 +520,9 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   // Conduits: even is receive, odd is transmit (for easier correlation with
   // flows)
   std::map<int, mozilla::RefPtr<mozilla::MediaSessionConduit> > mConduits;
+
+  // UUID Generator
+  mozilla::UniquePtr<PCUuidGenerator> mUuidGen;
 
   // The main thread.
   nsCOMPtr<nsIThread> mMainThread;

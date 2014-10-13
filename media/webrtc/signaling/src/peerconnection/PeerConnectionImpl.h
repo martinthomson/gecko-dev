@@ -22,6 +22,7 @@
 #include "nricemediastream.h"
 #include "nsComponentManagerUtils.h"
 #include "nsPIDOMWindow.h"
+#include "nsIUUIDGenerator.h"
 #include "nsIThread.h"
 
 #include "signaling/src/jsep/JsepSession.h"
@@ -134,6 +135,15 @@ using mozilla::PeerIdentity;
 class PeerConnectionWrapper;
 class PeerConnectionMedia;
 class RemoteSourceStreamInfo;
+
+// Uuid Generator
+class PCUuidGenerator : public mozilla::jsep::JsepUuidGenerator {
+ public:
+  virtual bool Generate(std::string* idp) MOZ_OVERRIDE;
+
+ private:
+  nsCOMPtr<nsIUUIDGenerator> mGenerator;
+};
 
 class IceConfiguration
 {
@@ -726,6 +736,7 @@ private:
   nsRefPtr<PeerConnectionMedia> mMedia;
 
   // The JSEP negotiation session.
+  mozilla::UniquePtr<PCUuidGenerator> mUuidGen;
   mozilla::UniquePtr<mozilla::jsep::JsepSession> mJsepSession;
 
 #ifdef MOZILLA_INTERNAL_API
@@ -769,18 +780,6 @@ class PeerConnectionWrapper
 
  private:
   nsRefPtr<PeerConnectionImpl> impl_;
-};
-
-class PeerConnectionJsepMST : public mozilla::jsep::JsepMediaStreamTrack {
- public:
-  PeerConnectionJsepMST(mozilla::SdpMediaSection::MediaType type) :
-      mType(type) {}
-
-  virtual mozilla::SdpMediaSection::MediaType media_type() const MOZ_OVERRIDE
-    {return mType; }
-
- private:
-  mozilla::SdpMediaSection::MediaType mType;
 };
 
 }  // end sipcc namespace

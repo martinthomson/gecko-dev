@@ -18,19 +18,20 @@
 namespace mozilla {
 namespace jsep {
 
+class JsepUuidGenerator  {
+ public:
+  virtual ~JsepUuidGenerator() {}
+  virtual bool Generate(std::string* id) = 0;
+};
+
 class JsepSessionImpl : public JsepSession {
  public:
-  JsepSessionImpl(const std::string& name) :
+  JsepSessionImpl(const std::string& name,
+                  UniquePtr<JsepUuidGenerator> uuidgen) :
       JsepSession(name),
       mSessionId(0),
-      mSessionVersion(0) {
-    Init();
-  }
-
-  JsepSessionImpl() :
-      JsepSession("anonymous"),
-      mSessionId(0),
-      mSessionVersion(0) {
+      mSessionVersion(0),
+      mUuidGen(Move(uuidgen)) {
     Init();
   }
 
@@ -168,7 +169,8 @@ class JsepSessionImpl : public JsepSession {
   nsresult SetRemoteDescriptionOffer(UniquePtr<Sdp> offer);
   nsresult SetRemoteDescriptionAnswer(JsepSdpType type,
                                       UniquePtr<Sdp> answer);
-  void SetRemoteTracksFromDescription(const Sdp& remote_description);
+  nsresult SetRemoteTracksFromDescription(const Sdp& remote_description);
+  nsresult CreateReceivingTrack(size_t m_line, const SdpMediaSection& msection);
   nsresult HandleNegotiatedSession(const UniquePtr<Sdp>& local,
                                    const UniquePtr<Sdp>& remote);
   nsresult DetermineSendingDirection(SdpDirectionAttribute::Direction offer,
@@ -190,7 +192,6 @@ class JsepSessionImpl : public JsepSession {
                                 Sdp* sdp);
   nsresult DetermineAnswererSetupRole(const SdpMediaSection& remote_msection,
                                       SdpSetupAttribute::Role* rolep);
-
   nsresult CreateTrack(const SdpMediaSection& remote_msection,
                        JsepTrack::Direction,
                        UniquePtr<JsepTrack>* track);
@@ -226,6 +227,7 @@ class JsepSessionImpl : public JsepSession {
   std::vector<JsepDtlsFingerprint> mDtlsFingerprints;
   uint64_t mSessionId;
   uint64_t mSessionVersion;
+  UniquePtr<JsepUuidGenerator> mUuidGen;
   UniquePtr<Sdp> mGeneratedLocalDescription; // Created but not set.
   UniquePtr<Sdp> mCurrentLocalDescription;
   UniquePtr<Sdp> mCurrentRemoteDescription;

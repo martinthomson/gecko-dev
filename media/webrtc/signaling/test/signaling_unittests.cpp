@@ -1359,12 +1359,12 @@ class SignalingAgent {
     if (local) {
       mozilla::SyncRunnable::DispatchToThread(
         gMainThread, WrapRunnableRet(
-          pc->media(), &sipcc::PeerConnectionMedia::GetLocalStream,
+          pc->media(), &sipcc::PeerConnectionMedia::GetLocalStreamByIndex,
           stream, &streamInfo));
     } else {
       mozilla::SyncRunnable::DispatchToThread(
         gMainThread, WrapRunnableRet(
-          pc->media(), &sipcc::PeerConnectionMedia::GetRemoteStream,
+          pc->media(), &sipcc::PeerConnectionMedia::GetRemoteStreamByIndex,
           stream, &streamInfo));
     }
 
