@@ -25,6 +25,7 @@ const SSL_ERROR_BASE = Ci.nsINSSErrorsService.NSS_SSL_ERROR_BASE;
 const MOZILLA_PKIX_ERROR_BASE = Ci.nsINSSErrorsService.MOZILLA_PKIX_ERROR_BASE;
 
 // Sort in numerical order
+const SSL_ERROR_NO_CYPHER_OVERLAP                       = SSL_ERROR_BASE +   2;
 const SEC_ERROR_INVALID_ARGS                            = SEC_ERROR_BASE +   5; // -8187
 const SEC_ERROR_BAD_DER                                 = SEC_ERROR_BASE +   9;
 const SEC_ERROR_EXPIRED_CERTIFICATE                     = SEC_ERROR_BASE +  11;
@@ -219,32 +220,27 @@ function run_test() {
 */
 function add_tls_server_setup(serverBinName) {
   add_test(function() {
-    _setupTLSServerTest(serverBinName);
+    start_tls_server(serverBinName).then(process => {
+      do_register_cleanup(() => process.kill());
+      run_next_test();
+    });
   });
 }
 
-// Add a TLS connection test case. aHost is the hostname to pass in the SNI TLS
-// extension; this should unambiguously identifiy which test is being run.
-// aExpectedResult is the expected nsresult of the connection.
-// aBeforeConnect is a callback function that takes no arguments that will be
-// called before the connection is attempted.
-// aWithSecurityInfo is a callback function that takes an
-// nsITransportSecurityInfo, which is called after the TLS handshake succeeds.
-// aAfterStreamOpen is a callback function that is called with the
-// nsISocketTransport once the output stream is ready.
-function add_connection_test(aHost, aExpectedResult,
-                             aBeforeConnect, aWithSecurityInfo,
-                             aAfterStreamOpen) {
+
+/* Returns a promise to connect to aHost that resolves to the result of that
+ * connection (internal use only) */
+function _connectToHost(aHost, aAfterStreamOpen) {
   const REMOTE_PORT = 8443;
 
   function Connection(aHost) {
     this.host = aHost;
     let threadManager = Cc["@mozilla.org/thread-manager;1"]
-                          .getService(Ci.nsIThreadManager);
+      .getService(Ci.nsIThreadManager);
     this.thread = threadManager.currentThread;
     this.defer = Promise.defer();
     let sts = Cc["@mozilla.org/network/socket-transport-service;1"]
-                .getService(Ci.nsISocketTransportService);
+      .getService(Ci.nsISocketTransportService);
     this.transport = sts.createTransport(["ssl"], 1, aHost, REMOTE_PORT, null);
     this.transport.setEventSink(this, this.thread);
     this.inputStream = null;
@@ -282,43 +278,62 @@ function add_connection_test(aHost, aExpectedResult,
         aAfterStreamOpen(this.transport);
       }
       let sslSocketControl = this.transport.securityInfo
-                               .QueryInterface(Ci.nsISSLSocketControl);
+        .QueryInterface(Ci.nsISSLSocketControl);
       sslSocketControl.proxyStartSSL();
       this.outputStream.write("0", 1);
       let inStream = this.transport.openInputStream(0, 0, 0)
-                       .QueryInterface(Ci.nsIAsyncInputStream);
+        .QueryInterface(Ci.nsIAsyncInputStream);
       this.inputStream = inStream;
       this.inputStream.asyncWait(this, 0, 0, this.thread);
     },
 
     go: function() {
       this.outputStream = this.transport.openOutputStream(0, 0, 0)
-                            .QueryInterface(Ci.nsIAsyncOutputStream);
+        .QueryInterface(Ci.nsIAsyncOutputStream);
       return this.defer.promise;
     }
   };
 
-  /* Returns a promise to connect to aHost that resolves to the result of that
-   * connection */
-  function connectTo(aHost) {
-    Services.prefs.setCharPref("network.dns.localDomains", aHost);
-    let connection = new Connection(aHost);
-    return connection.go();
-  }
+  Services.prefs.setCharPref("network.dns.localDomains", aHost);
+  let connection = new Connection(aHost);
+  return connection.go();
+}
 
-  add_test(function() {
-    if (aBeforeConnect) {
-      aBeforeConnect();
-    }
-    connectTo(aHost).then(function(conn) {
+// Connect to a host.  aHost is the hostname to pass in the SNI TLS
+// extension; this should unambiguously identifiy which test is being run.
+// aExpectedResult is the expected nsresult of the connection.
+// aBeforeConnect is a callback function that takes no arguments that will be
+// called before the connection is attempted.
+// aWithSecurityInfo is a callback function that takes an
+// nsITransportSecurityInfo, which is called after the TLS handshake succeeds.
+// aAfterStreamOpen is a callback function that is called with the
+// nsISocketTransport once the output stream is ready.
+// Returns a promise that resolves when this is all done
+function connect_to_host(aHost, aExpectedResult,
+                         aBeforeConnect, aWithSecurityInfo,
+                         aAfterStreamOpen) {
+  return Promise.resolve()
+    .then(aBeforeConnect) // resolves immediately if aBeforeConnect is undefined
+    .then(() => _connectToHost(aHost, aAfterStreamOpen))
+    .then(conn => {
       do_print("handling " + aHost);
       do_check_eq(conn.result, aExpectedResult);
       if (aWithSecurityInfo) {
         aWithSecurityInfo(conn.transport.securityInfo
-                              .QueryInterface(Ci.nsITransportSecurityInfo));
+                          .QueryInterface(Ci.nsITransportSecurityInfo));
       }
-      run_next_test();
     });
+}
+
+// Add a TLS connection test case.  See connect_to_host() for arguments
+function add_connection_test(aHost, aExpectedResult,
+                             aBeforeConnect, aWithSecurityInfo,
+                             aAfterStreamOpen) {
+  add_test(function() {
+    connect_to_host(aHost, aExpectedResult,
+                    aBeforeConnect, aWithSecurityInfo,
+                    aAfterStreamOpen)
+      .then(run_next_test);
   });
 }
 
@@ -347,8 +362,10 @@ function _getBinaryUtil(binaryUtilName) {
   return utilBin;
 }
 
-// Do not call this directly; use add_tls_server_setup
-function _setupTLSServerTest(serverBinName)
+// starts a TLS server
+// returns a process that you are required to kill when you are done
+// this is more easily handled by add_tls_server_setup()
+function start_tls_server(serverBinName)
 {
   let certdb = Cc["@mozilla.org/security/x509certdb;1"]
                   .getService(Ci.nsIX509CertDB);
@@ -367,18 +384,19 @@ function _setupTLSServerTest(serverBinName)
   envSvc.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
   envSvc.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
 
-  let httpServer = new HttpServer();
-  httpServer.registerPathHandler("/",
+  let serverStarted = new Promise(resolve => {
+    let httpServer = new HttpServer();
+    httpServer.registerPathHandler(
+      "/",
       function handleServerCallback(aRequest, aResponse) {
         aResponse.setStatusLine(aRequest.httpVersion, 200, "OK");
         aResponse.setHeader("Content-Type", "text/plain");
         let responseBody = "OK!";
         aResponse.bodyOutputStream.write(responseBody, responseBody.length);
-        do_execute_soon(function() {
-          httpServer.stop(run_next_test);
-        });
+        httpServer.stop(resolve);
       });
-  httpServer.start(CALLBACK_PORT);
+    httpServer.start(CALLBACK_PORT);
+  });
 
   let serverBin = _getBinaryUtil(serverBinName);
   let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
@@ -389,9 +407,7 @@ function _setupTLSServerTest(serverBinName)
   // Using "sql:" causes the SQL DB to be used so we can run tests on Android.
   process.run(false, [ "sql:" + certDir.path ], 1);
 
-  do_register_cleanup(function() {
-    process.kill();
-  });
+  return serverStarted.then(() => process);
 }
 
 // Returns an Array of OCSP responses for a given ocspRespArray and a location
