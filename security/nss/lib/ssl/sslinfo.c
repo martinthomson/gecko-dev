@@ -10,74 +10,72 @@ ssl_GetCompressionMethodName(SSLCompressionMethod compression)
 {
     switch (compression) {
     case ssl_compression_null:
-	return "NULL";
+        return "NULL";
 #ifdef NSS_ENABLE_ZLIB
     case ssl_compression_deflate:
-	return "DEFLATE";
+        return "DEFLATE";
 #endif
     default:
-	return "???";
+        return "???";
     }
 }
 
-SECStatus 
+SECStatus
 SSL_GetChannelInfo(PRFileDesc *fd, SSLChannelInfo *info, PRUintn len)
 {
     sslSocket *      ss;
     SSLChannelInfo   inf;
     sslSessionID *   sid;
 
-    if (!info || len < sizeof inf.length) { 
-	PORT_SetError(SEC_ERROR_INVALID_ARGS);
-	return SECFailure;
+    if (!info || len < sizeof inf.length) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
     }
 
     ss = ssl_FindSocket(fd);
     if (!ss) {
-	SSL_DBG(("%d: SSL[%d]: bad socket in SSL_GetChannelInfo",
-		 SSL_GETPID(), fd));
-	return SECFailure;
+        SSL_DBG(("%d: SSL[%d]: bad socket in SSL_GetChannelInfo",
+                 SSL_GETPID(), fd));
+        return SECFailure;
     }
 
     memset(&inf, 0, sizeof inf);
     inf.length = PR_MIN(sizeof inf, len);
 
-    if (ss->opt.useSecurity && ss->enoughFirstHsDone) {
-        sid = ss->sec.ci.sid;
-	inf.protocolVersion  = ss->version;
-	inf.authKeyBits      = ss->sec.authKeyBits;
-	inf.keaKeyBits       = ss->sec.keaKeyBits;
-	if (ss->version < SSL_LIBRARY_VERSION_3_0) { /* SSL2 */
-	    inf.cipherSuite           = ss->sec.cipherType | 0xff00;
-	    inf.compressionMethod     = ssl_compression_null;
-	    inf.compressionMethodName = "N/A";
-	} else if (ss->ssl3.initialized) { 	/* SSL3 and TLS */
-	    ssl_GetSpecReadLock(ss);
-	    /* XXX  The cipher suite should be in the specs and this
-	     * function should get it from cwSpec rather than from the "hs".
-	     * See bug 275744 comment 69 and bug 766137.
-	     */
-	    inf.cipherSuite           = ss->ssl3.hs.cipher_suite;
-	    inf.compressionMethod     = ss->ssl3.cwSpec->compression_method;
-	    ssl_ReleaseSpecReadLock(ss);
-	    inf.compressionMethodName =
-		ssl_GetCompressionMethodName(inf.compressionMethod);
-	}
-	if (sid) {
-	    inf.creationTime   = sid->creationTime;
-	    inf.lastAccessTime = sid->lastAccessTime;
-	    inf.expirationTime = sid->expirationTime;
-	    if (ss->version < SSL_LIBRARY_VERSION_3_0) { /* SSL2 */
-	        inf.sessionIDLength = SSL2_SESSIONID_BYTES;
-		memcpy(inf.sessionID, sid->u.ssl2.sessionID, 
-		       SSL2_SESSIONID_BYTES);
-	    } else {
-		unsigned int sidLen = sid->u.ssl3.sessionIDLength;
-	        sidLen = PR_MIN(sidLen, sizeof inf.sessionID);
-	        inf.sessionIDLength = sidLen;
-		memcpy(inf.sessionID, sid->u.ssl3.sessionID, sidLen);
-	    }
-	}
+    sid = ss->sec.ci.sid;
+    inf.protocolVersion  = ss->version;
+    inf.authKeyBits      = ss->sec.authKeyBits;
+    inf.keaKeyBits       = ss->sec.keaKeyBits;
+    if (ss->version < SSL_LIBRARY_VERSION_3_0) { /* SSL2 */
+        inf.cipherSuite           = ss->sec.cipherType | 0xff00;
+        inf.compressionMethod     = ssl_compression_null;
+        inf.compressionMethodName = "N/A";
+    } else if (ss->ssl3.initialized) {     /* SSL3 and TLS */
+        ssl_GetSpecReadLock(ss);
+        /* XXX  The cipher suite should be in the specs and this
+         * function should get it from cwSpec rather than from the "hs".
+         * See bug 275744 comment 69 and bug 766137.
+         */
+        inf.cipherSuite           = ss->ssl3.hs.cipher_suite;
+        inf.compressionMethod     = ss->ssl3.cwSpec->compression_method;
+        ssl_ReleaseSpecReadLock(ss);
+        inf.compressionMethodName =
+                ssl_GetCompressionMethodName(inf.compressionMethod);
+    }
+    if (sid) {
+        inf.creationTime   = sid->creationTime;
+        inf.lastAccessTime = sid->lastAccessTime;
+        inf.expirationTime = sid->expirationTime;
+        if (ss->version < SSL_LIBRARY_VERSION_3_0) { /* SSL2 */
+            inf.sessionIDLength = SSL2_SESSIONID_BYTES;
+            memcpy(inf.sessionID, sid->u.ssl2.sessionID,
+                   SSL2_SESSIONID_BYTES);
+        } else {
+            unsigned int sidLen = sid->u.ssl3.sessionIDLength;
+            sidLen = PR_MIN(sidLen, sizeof inf.sessionID);
+            inf.sessionIDLength = sidLen;
+            memcpy(inf.sessionID, sid->u.ssl3.sessionID, sidLen);
+        }
     }
 
     memcpy(info, &inf, inf.length);
@@ -100,7 +98,7 @@ SSL_GetChannelInfo(PRFileDesc *fd, SSLChannelInfo *info, PRUintn len)
 #define K_ECDH	"ECDH", kt_ecdh
 #define K_ECDHE	"ECDHE", kt_ecdh
 
-#define C_SEED 	"SEED", calg_seed
+#define C_SEED          "SEED", calg_seed
 #define C_CAMELLIA "CAMELLIA", calg_camellia
 #define C_AES	"AES", calg_aes
 #define C_RC4	"RC4", calg_rc4
@@ -108,7 +106,7 @@ SSL_GetChannelInfo(PRFileDesc *fd, SSLChannelInfo *info, PRUintn len)
 #define C_DES	"DES", calg_des
 #define C_3DES	"3DES", calg_3des
 #define C_NULL  "NULL", calg_null
-#define C_SJ 	"SKIPJACK", calg_sj
+#define C_SJ    "SKIPJACK", calg_sj
 #define C_AESGCM "AES-GCM", calg_aes_gcm
 
 #define B_256	256, 256, 256
@@ -118,7 +116,7 @@ SSL_GetChannelInfo(PRFileDesc *fd, SSLChannelInfo *info, PRUintn len)
 #define B_DES    64,  56,  56
 #define B_56    128,  56,  56
 #define B_40    128,  40,  40
-#define B_0  	  0,   0,   0
+#define B_0       0,   0,   0
 
 #define M_AEAD_128 "AEAD", ssl_mac_aead, 128
 #define M_SHA256 "SHA256", ssl_hmac_sha256, 256
@@ -215,31 +213,31 @@ static const SSLCipherSuiteInfo suiteInfo[] = {
 #define NUM_SUITEINFOS ((sizeof suiteInfo) / (sizeof suiteInfo[0]))
 
 
-SECStatus SSL_GetCipherSuiteInfo(PRUint16 cipherSuite, 
+SECStatus SSL_GetCipherSuiteInfo(PRUint16 cipherSuite,
                                  SSLCipherSuiteInfo *info, PRUintn len)
 {
     unsigned int i;
 
     len = PR_MIN(len, sizeof suiteInfo[0]);
     if (!info || len < sizeof suiteInfo[0].length) {
-	PORT_SetError(SEC_ERROR_INVALID_ARGS);
-    	return SECFailure;
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
     }
     for (i = 0; i < NUM_SUITEINFOS; i++) {
-    	if (suiteInfo[i].cipherSuite == cipherSuite) {
-	    memcpy(info, &suiteInfo[i], len);
-	    info->length = len;
-	    return SECSuccess;
-	}
+        if (suiteInfo[i].cipherSuite == cipherSuite) {
+            memcpy(info, &suiteInfo[i], len);
+            info->length = len;
+            return SECSuccess;
+        }
     }
     PORT_SetError(SEC_ERROR_INVALID_ARGS);
     return SECFailure;
 }
 
-/* This function might be a candidate to be public. 
+/* This function might be a candidate to be public.
  * Disables all export ciphers in the default set of enabled ciphers.
  */
-SECStatus 
+SECStatus
 SSL_DisableDefaultExportCipherSuites(void)
 {
     const SSLCipherSuiteInfo * pInfo = suiteInfo;
@@ -247,20 +245,20 @@ SSL_DisableDefaultExportCipherSuites(void)
     SECStatus rv;
 
     for (i = 0; i < NUM_SUITEINFOS; ++i, ++pInfo) {
-    	if (pInfo->isExportable) {
-	    rv = SSL_CipherPrefSetDefault(pInfo->cipherSuite, PR_FALSE);
-	    PORT_Assert(rv == SECSuccess);
-	}
+        if (pInfo->isExportable) {
+            rv = SSL_CipherPrefSetDefault(pInfo->cipherSuite, PR_FALSE);
+            PORT_Assert(rv == SECSuccess);
+        }
     }
     return SECSuccess;
 }
 
-/* This function might be a candidate to be public, 
+/* This function might be a candidate to be public,
  * except that it takes an sslSocket pointer as an argument.
  * A Public version would take a PRFileDesc pointer.
  * Disables all export ciphers in the default set of enabled ciphers.
  */
-SECStatus 
+SECStatus
 SSL_DisableExportCipherSuites(PRFileDesc * fd)
 {
     const SSLCipherSuiteInfo * pInfo = suiteInfo;
@@ -268,15 +266,15 @@ SSL_DisableExportCipherSuites(PRFileDesc * fd)
     SECStatus rv;
 
     for (i = 0; i < NUM_SUITEINFOS; ++i, ++pInfo) {
-    	if (pInfo->isExportable) {
-	    rv = SSL_CipherPrefSet(fd, pInfo->cipherSuite, PR_FALSE);
-	    PORT_Assert(rv == SECSuccess);
-	}
+        if (pInfo->isExportable) {
+            rv = SSL_CipherPrefSet(fd, pInfo->cipherSuite, PR_FALSE);
+            PORT_Assert(rv == SECSuccess);
+        }
     }
     return SECSuccess;
 }
 
-/* Tells us if the named suite is exportable 
+/* Tells us if the named suite is exportable
  * returns false for unknown suites.
  */
 PRBool
@@ -284,9 +282,9 @@ SSL_IsExportCipherSuite(PRUint16 cipherSuite)
 {
     unsigned int i;
     for (i = 0; i < NUM_SUITEINFOS; i++) {
-    	if (suiteInfo[i].cipherSuite == cipherSuite) {
-	    return (PRBool)(suiteInfo[i].isExportable);
-	}
+        if (suiteInfo[i].cipherSuite == cipherSuite) {
+            return (PRBool)(suiteInfo[i].isExportable);
+        }
     }
     return PR_FALSE;
 }
@@ -300,9 +298,9 @@ SSL_GetNegotiatedHostInfo(PRFileDesc *fd)
 
     ss = ssl_FindSocket(fd);
     if (!ss) {
-	SSL_DBG(("%d: SSL[%d]: bad socket in SSL_GetNegotiatedHostInfo",
-		 SSL_GETPID(), fd));
-	return NULL;
+        SSL_DBG(("%d: SSL[%d]: bad socket in SSL_GetNegotiatedHostInfo",
+                 SSL_GETPID(), fd));
+        return NULL;
     }
 
     if (ss->sec.isServer) {
@@ -317,7 +315,7 @@ SSL_GetNegotiatedHostInfo(PRFileDesc *fd)
             ssl_ReleaseSpecReadLock(ss); /*----------------------------*/
         }
         return sniName;
-    } 
+    }
     name = SSL_RevealURL(fd);
     if (name) {
         sniName = PORT_ZNew(SECItem);
@@ -345,24 +343,24 @@ SSL_ExportKeyingMaterial(PRFileDesc *fd,
 
     ss = ssl_FindSocket(fd);
     if (!ss) {
-	SSL_DBG(("%d: SSL[%d]: bad socket in ExportKeyingMaterial",
-		 SSL_GETPID(), fd));
-	return SECFailure;
+        SSL_DBG(("%d: SSL[%d]: bad socket in ExportKeyingMaterial",
+                 SSL_GETPID(), fd));
+        return SECFailure;
     }
 
     if (ss->version < SSL_LIBRARY_VERSION_3_1_TLS) {
-	PORT_SetError(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_VERSION);
-	return SECFailure;
+        PORT_SetError(SSL_ERROR_FEATURE_NOT_SUPPORTED_FOR_VERSION);
+        return SECFailure;
     }
 
     /* construct PRF arguments */
     valLen = SSL3_RANDOM_LENGTH * 2;
     if (hasContext) {
-	valLen += 2 /* PRUint16 length */ + contextLen;
+        valLen += 2 /* PRUint16 length */ + contextLen;
     }
     val = PORT_Alloc(valLen);
     if (!val) {
-	return SECFailure;
+        return SECFailure;
     }
     i = 0;
     PORT_Memcpy(val + i, &ss->ssl3.hs.client_random.rand, SSL3_RANDOM_LENGTH);
@@ -370,10 +368,10 @@ SSL_ExportKeyingMaterial(PRFileDesc *fd,
     PORT_Memcpy(val + i, &ss->ssl3.hs.server_random.rand, SSL3_RANDOM_LENGTH);
     i += SSL3_RANDOM_LENGTH;
     if (hasContext) {
-	val[i++] = contextLen >> 8;
-	val[i++] = contextLen;
-	PORT_Memcpy(val + i, context, contextLen);
-	i += contextLen;
+        val[i++] = contextLen >> 8;
+        val[i++] = contextLen;
+        PORT_Memcpy(val + i, context, contextLen);
+        i += contextLen;
     }
     PORT_Assert(i == valLen);
 
@@ -382,11 +380,11 @@ SSL_ExportKeyingMaterial(PRFileDesc *fd,
      */
     ssl_GetSpecReadLock(ss);
     if (!ss->ssl3.cwSpec->master_secret && !ss->ssl3.cwSpec->msItem.len) {
-	PORT_SetError(SSL_ERROR_HANDSHAKE_NOT_COMPLETED);
-	rv = SECFailure;
+        PORT_SetError(SSL_ERROR_HANDSHAKE_NOT_COMPLETED);
+        rv = SECFailure;
     } else {
-	rv = ssl3_TLSPRFWithMasterSecret(ss->ssl3.cwSpec, label, labelLen, val,
-					 valLen, out, outLen);
+        rv = ssl3_TLSPRFWithMasterSecret(ss->ssl3.cwSpec, label, labelLen, val,
+                                         valLen, out, outLen);
     }
     ssl_ReleaseSpecReadLock(ss);
 

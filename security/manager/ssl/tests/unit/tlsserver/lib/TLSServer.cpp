@@ -16,7 +16,6 @@
 #include "prnetdb.h"
 #include "prtime.h"
 #include "ssl.h"
-#include "sslproto.h"
 
 namespace mozilla { namespace test {
 
@@ -267,36 +266,8 @@ ConfigSecureServerWithNamedCert(PRFileDesc *fd, const char *certName,
   return SECSuccess;
 }
 
-static uint16_t
-GetEnvVersion(const char* envName, uint16_t defVersion)
-{
-  char* val = getenv(envName);
-  if (!val) {
-    return defVersion;
-  }
-  char* endptr;
-  unsigned long int envValue = strtoul(val, &endptr, 10);
-  if (endptr == val || envValue > 3) { // 3 == TLS 1.2
-    return defVersion;
-  }
-
-  return SSL_LIBRARY_VERSION_3_0 + static_cast<uint16_t>(envValue);
-}
-
-static SECStatus
-ConfigureTLSVersion() {
-  uint16_t minVersion = GetEnvVersion("TLS_SERVER_VERSION_MIN",
-                                      SSL_LIBRARY_VERSION_TLS_1_0);
-  uint16_t maxVersion = GetEnvVersion("TLS_SERVER_VERSION_MAX",
-                                      SSL_LIBRARY_VERSION_TLS_1_2);
-
-  SSLVersionRange range = { minVersion, maxVersion };
-  return SSL_VersionRangeSetDefault(ssl_variant_stream, &range);
-}
-
 int
-StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
-            void *sniSocketConfigArg)
+InitServer(const char *nssCertDBDir)
 {
   const char *debugLevel = PR_GetEnv("MOZ_TLS_SERVER_DEBUG_LEVEL");
   if (debugLevel) {
@@ -330,12 +301,12 @@ StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
     PrintPRError("SSL_ConfigServerSessionIDCache failed");
     return 1;
   }
+  return 0;
+}
 
-  if (ConfigureTLSVersion() != SECSuccess) {
-    PrintPRError("Unable to set TLS version");
-    return 1;
-  }
-
+int
+StartServer(SSLSNISocketConfig sniSocketConfig, void *sniSocketConfigArg)
+{
   ScopedPRFileDesc serverSocket(PR_NewTCPSocket());
   if (!serverSocket) {
     PrintPRError("PR_NewTCPSocket failed");

@@ -124,5 +124,8 @@ main(int argc, char *argv[])
     return 1;
   }
 
-  return StartServer(argv[1], DoSNISocketConfig, nullptr);
+  if (InitServer(argv[1])) {
+    return 1;
+  }
+  return StartServer(DoSNISocketConfig, nullptr);
 }
