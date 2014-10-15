@@ -68,7 +68,7 @@ BeVersionIntolerant(PRFileDesc *aFd, const SECItem *aSrvNameArr,
   if (info.protocolVersion >= intolerantVersion) {
     // This is going to seriously mess up the state machine.
     // Find the plaintext layer and then trash the connection.
-    // Note: preserving the typo
+    // Note: preserving the typo in the name
     PRDescIdentity plaintextId = PR_GetUniqueIdentity("Plaintxext PSM layer");
     PRFileDesc* rawLayer =  PR_GetIdentitiesLayer(aFd, plaintextId);
     PR_Write(rawLayer, message, sizeof(message));
@@ -95,9 +95,8 @@ main(int argc, char *argv[])
   static uint16_t intolerant_version =
       GetEnvTLSVersion("TLS_SERVER_VERSION_INTOLERANT", UINT16_MAX);
 
-  int rv;
-  if ((rv = InitServer(argv[1]))) {
-    return rv;
+  if (InitServer(argv[1])) {
+    return 1;
   }
   ConfigureTLSVersion();
   return StartServer(BeVersionIntolerant, &intolerant_version);
