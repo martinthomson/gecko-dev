@@ -122,6 +122,13 @@ typedef struct SSLChannelInfoStr {
     /* compression method info */
     const char *         compressionMethodName;
     SSLCompressionMethod compressionMethod;
+
+    /* The following fields are added in NSS 3.18 */
+
+    /* If this is false, the values in this structure might not be complete.
+     * Note that this will be true prior to Finished being received, which
+     * means that the connection could still fail. */
+    PRBool               infoComplete;
 } SSLChannelInfo;
 
 typedef struct SSLCipherSuiteInfoStr {

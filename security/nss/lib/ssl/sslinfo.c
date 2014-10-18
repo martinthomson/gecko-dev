@@ -42,42 +42,53 @@ SSL_GetChannelInfo(PRFileDesc *fd, SSLChannelInfo *info, PRUintn len)
     memset(&inf, 0, sizeof inf);
     inf.length = PR_MIN(sizeof inf, len);
 
-    if (ss->opt.useSecurity && ss->enoughFirstHsDone) {
+    PRBool includeInfo = PR_TRUE;
+    if (inf.length <= (PRUint8 *)&inf.infoComplete - (PRUint8 *)&inf) {
+        /* Don't include data unconditionally if the struct isn't large enough,
+         * indicating that the caller doesn't realize that this info could be
+         * provisional. (enoughFirstHsDone is set prior to receiving the server
+         * Finished message, but these values don't change beyond that point:
+         * the only thing that happens is that the connection could fail). */
+        includeInfo = ss->opt.useSecurity && ss->enoughFirstHsDone;
+    }
+
+    if (includeInfo) {
         sid = ss->sec.ci.sid;
-	inf.protocolVersion  = ss->version;
-	inf.authKeyBits      = ss->sec.authKeyBits;
-	inf.keaKeyBits       = ss->sec.keaKeyBits;
-	if (ss->version < SSL_LIBRARY_VERSION_3_0) { /* SSL2 */
-	    inf.cipherSuite           = ss->sec.cipherType | 0xff00;
-	    inf.compressionMethod     = ssl_compression_null;
-	    inf.compressionMethodName = "N/A";
-	} else if (ss->ssl3.initialized) { 	/* SSL3 and TLS */
-	    ssl_GetSpecReadLock(ss);
-	    /* XXX  The cipher suite should be in the specs and this
-	     * function should get it from cwSpec rather than from the "hs".
-	     * See bug 275744 comment 69 and bug 766137.
-	     */
-	    inf.cipherSuite           = ss->ssl3.hs.cipher_suite;
-	    inf.compressionMethod     = ss->ssl3.cwSpec->compression_method;
-	    ssl_ReleaseSpecReadLock(ss);
-	    inf.compressionMethodName =
-		ssl_GetCompressionMethodName(inf.compressionMethod);
-	}
-	if (sid) {
-	    inf.creationTime   = sid->creationTime;
-	    inf.lastAccessTime = sid->lastAccessTime;
-	    inf.expirationTime = sid->expirationTime;
-	    if (ss->version < SSL_LIBRARY_VERSION_3_0) { /* SSL2 */
-	        inf.sessionIDLength = SSL2_SESSIONID_BYTES;
-		memcpy(inf.sessionID, sid->u.ssl2.sessionID, 
-		       SSL2_SESSIONID_BYTES);
-	    } else {
-		unsigned int sidLen = sid->u.ssl3.sessionIDLength;
-	        sidLen = PR_MIN(sidLen, sizeof inf.sessionID);
-	        inf.sessionIDLength = sidLen;
-		memcpy(inf.sessionID, sid->u.ssl3.sessionID, sidLen);
-	    }
-	}
+        inf.protocolVersion  = ss->version;
+        inf.authKeyBits      = ss->sec.authKeyBits;
+        inf.keaKeyBits       = ss->sec.keaKeyBits;
+        inf.infoComplete     = ss->enoughFirstHsDone;
+        if (ss->version < SSL_LIBRARY_VERSION_3_0) { /* SSL2 */
+            inf.cipherSuite           = ss->sec.cipherType | 0xff00;
+            inf.compressionMethod     = ssl_compression_null;
+            inf.compressionMethodName = "N/A";
+        } else if (ss->ssl3.initialized) {     /* SSL3 and TLS */
+            ssl_GetSpecReadLock(ss);
+            /* XXX  The cipher suite should be in the specs and this
+             * function should get it from cwSpec rather than from the "hs".
+             * See bug 275744 comment 69 and bug 766137.
+             */
+            inf.cipherSuite           = ss->ssl3.hs.cipher_suite;
+            inf.compressionMethod     = ss->ssl3.cwSpec->compression_method;
+            ssl_ReleaseSpecReadLock(ss);
+            inf.compressionMethodName =
+                ssl_GetCompressionMethodName(inf.compressionMethod);
+        }
+        if (sid) {
+            inf.creationTime   = sid->creationTime;
+            inf.lastAccessTime = sid->lastAccessTime;
+            inf.expirationTime = sid->expirationTime;
+            if (ss->version < SSL_LIBRARY_VERSION_3_0) { /* SSL2 */
+                inf.sessionIDLength = SSL2_SESSIONID_BYTES;
+                memcpy(inf.sessionID, sid->u.ssl2.sessionID,
+                       SSL2_SESSIONID_BYTES);
+            } else {
+                unsigned int sidLen = sid->u.ssl3.sessionIDLength;
+                sidLen = PR_MIN(sidLen, sizeof inf.sessionID);
+                inf.sessionIDLength = sidLen;
+                memcpy(inf.sessionID, sid->u.ssl3.sessionID, sidLen);
+            }
+        }
     }
 
     memcpy(info, &inf, inf.length);
