@@ -995,22 +995,6 @@ nsresult JsepSessionImpl::SetRemoteDescriptionAnswer(
   mCurrentRemoteDescription = Move(mPendingRemoteDescription);
   mCurrentLocalDescription = Move(mPendingLocalDescription);
 
-  // Now iterate over the negotiated track pairs and make the
-  // remote streams.
-  for (auto tp = mNegotiatedTrackPairs.begin();
-       tp != mNegotiatedTrackPairs.end(); ++tp) {
-    auto track = *tp;
-
-    // If we have a receiving track and it hasn't been assigned to an
-    // MST, this means that it's new.
-    if (track->mReceiving && !track->mReceiving->media_stream_track()) {
-      rv = CreateReceivingTrack(
-          track->mLevel,
-          mCurrentRemoteDescription->GetMediaSection(track->mLevel));
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
-  }
-
   SetState(kJsepStateStable);
   return NS_OK;
 }
@@ -1023,6 +1007,8 @@ nsresult JsepSessionImpl::SetRemoteTracksFromDescription(
     const SdpMediaSection& msection = remote_description.GetMediaSection(i);
     auto direction = msection.GetDirectionAttribute().mValue;
 
+    // TODO(ekr@rtfm.com): Suppress new track creation on renegotiation
+    // of existing tracks.
     if (direction == SdpDirectionAttribute::kSendrecv ||
         direction == SdpDirectionAttribute::kSendonly) {
       nsresult rv = CreateReceivingTrack(i, msection);
