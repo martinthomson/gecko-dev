@@ -43,7 +43,9 @@ ConfigSecureServerWithNamedCert(PRFileDesc *fd, const char *certName,
                                 /*optional*/ SSLKEAType *kea);
 
 int
-StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
+InitServer(const char *nssCertDBDir);
+int
+StartServer(SSLSNISocketConfig sniSocketConfig,
             void *sniSocketConfigArg);
 
 template <typename Host>

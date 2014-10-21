@@ -581,6 +581,7 @@ NO_PKG_FILES += \
 	pk12util* \
 	BadCertServer* \
 	ClientAuthServer* \
+	IntolerantServer* \
 	OCSPStaplingServer* \
 	GenerateOCSPResponse* \
 	winEmbed.exe \
