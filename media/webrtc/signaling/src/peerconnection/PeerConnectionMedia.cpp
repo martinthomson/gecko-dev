@@ -704,7 +704,6 @@ PeerConnectionMedia::GetRemoteStreamById(const std::string& id)
     }
   }
 
-  MOZ_ASSERT(false);
   return nullptr;
 }
 

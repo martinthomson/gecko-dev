@@ -37,7 +37,7 @@ JsepSessionImpl::~JsepSessionImpl() {
   }
 }
 
-void JsepSessionImpl::Init() {
+nsresult JsepSessionImpl::Init() {
   SECStatus rv = PK11_GenerateRandom(
       reinterpret_cast<unsigned char *>(&mSessionId), sizeof(mSessionId));
   mSessionId >>= 2; // Discard high order bits.
@@ -45,7 +45,13 @@ void JsepSessionImpl::Init() {
     MOZ_CRASH();
   }
 
+  if (!mUuidGen->Generate(&mDefaultRemoteStreamId)) {
+    return NS_ERROR_FAILURE;
+  }
+
   SetupDefaultCodecs();
+
+  return NS_OK;
 }
 
 nsresult JsepSessionImpl::AddTrack(const RefPtr<JsepMediaStreamTrack>& track) {
@@ -609,6 +615,22 @@ nsresult JsepSessionImpl::SetRemoteDescription(JsepSdpType type,
   return rv;
 }
 
+
+// Helper function to find the track in question.
+template <class T> nsresult FindMSTForMLine(
+    const std::vector<T>& tracks,
+    size_t mLine,
+    RefPtr<JsepMediaStreamTrack>* mst) {
+  for (auto t = tracks.begin(); t != tracks.end(); ++t) {
+    if (t->mAssignedMLine.isSome() && (*t->mAssignedMLine == mLine)) {
+      *mst = t->mTrack;
+      return NS_OK;
+    }
+  }
+
+  return NS_ERROR_FAILURE;
+}
+
 nsresult JsepSessionImpl::HandleNegotiatedSession(const UniquePtr<Sdp>& local,
                                                   const UniquePtr<Sdp>& remote) {
   bool remote_ice_lite = remote->GetAttributeList().HasAttribute(
@@ -682,13 +704,20 @@ nsresult JsepSessionImpl::HandleNegotiatedSession(const UniquePtr<Sdp>& local,
     // TODO(ekr@rtfm.com): Set the bundle level. Issue 159.
     jpair->mLevel = i;
 
+    RefPtr<JsepMediaStreamTrack> mst;
     if (sending) {
-      rv = CreateTrack(rm, JsepTrack::kJsepTrackSending,
+      rv = FindMSTForMLine(mLocalTracks, i, &mst);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = CreateTrack(rm, JsepTrack::kJsepTrackSending, mst,
                        &jpair->mSending);
       NS_ENSURE_SUCCESS(rv, rv);
     }
     if (receiving) {
-      rv = CreateTrack(rm, JsepTrack::kJsepTrackReceiving,
+      rv = FindMSTForMLine(mRemoteTracks, i, &mst);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      rv = CreateTrack(rm, JsepTrack::kJsepTrackReceiving, mst,
                        &jpair->mReceiving);
       NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -732,9 +761,11 @@ nsresult JsepSessionImpl::HandleNegotiatedSession(const UniquePtr<Sdp>& local,
 
 nsresult JsepSessionImpl::CreateTrack(const SdpMediaSection& remote_msection,
                                       JsepTrack::Direction direction,
+                                      const RefPtr<JsepMediaStreamTrack>& mst,
                                       UniquePtr<JsepTrack>* trackp) {
   UniquePtr<JsepTrackImpl> track = MakeUnique<JsepTrackImpl>();
   track->mDirection = direction;
+  track->mMediaStreamTrack = mst;
   track->mMediaType = remote_msection.GetMediaType();
   track->mProtocol = remote_msection.GetProtocol();
 
@@ -1027,13 +1058,11 @@ nsresult JsepSessionImpl::CreateReceivingTrack(
 
   // Generate random ids. TODO(ekr@rtfm.com): Pull these out of SDP if
   // available.
-  if (!mUuidGen->Generate(&stream_id))
-    return NS_ERROR_FAILURE;
   if (!mUuidGen->Generate(&track_id))
     return NS_ERROR_FAILURE;
 
   JsepMediaStreamTrackStatic* remote = new JsepMediaStreamTrackStatic(
-    msection.GetMediaType(), stream_id, track_id);
+    msection.GetMediaType(), mDefaultRemoteStreamId, track_id);
   JsepReceivingTrack rtrack;
   rtrack.mTrack = remote;
   rtrack.mAssignedMLine = Some(m_line);

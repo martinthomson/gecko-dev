@@ -53,6 +53,8 @@ class JsepSession {
         mState(kJsepStateStable) {}
   virtual ~JsepSession() {}
 
+  virtual nsresult Init() = 0;
+
   // Accessors for basic properties.
   virtual const std::string& name() const { return mName; }
   virtual JsepSignalingState state() const { return mState; }

@@ -211,7 +211,7 @@ protected:
   std::map<mozilla::TrackID, mozilla::RefPtr<mozilla::MediaPipeline>> mPipelines;
   nsRefPtr<DOMMediaStream> mMediaStream;
   PeerConnectionMedia *mParent;
-  const std::string& mId;
+  const std::string mId;
 };
 
 // TODO(ekr@rtfm.com): Refactor {Local,Remote}SourceStreamInfo
@@ -270,9 +270,11 @@ class RemoteSourceStreamInfo : public SourceStreamInfo {
   typedef mozilla::DOMMediaStream DOMMediaStream;
 
   RemoteSourceStreamInfo(already_AddRefed<DOMMediaStream> aMediaStream,
-                         PeerConnectionMedia *aParent)
-    : SourceStreamInfo(aMediaStream, aParent, "unnamed"),
-      mTrackTypeHints(0) {}
+                         PeerConnectionMedia *aParent,
+                         const std::string& aId)
+    : SourceStreamInfo(aMediaStream, aParent, aId),
+      mTrackTypeHints(0) {
+  }
 
   void StorePipeline(int aTrack, bool aIsVideo,
                      mozilla::RefPtr<mozilla::MediaPipelineReceive> aPipeline);

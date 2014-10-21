@@ -80,6 +80,9 @@ class JsepSessionTest : public JsepSessionTestBase,
   JsepSessionTest() :
       mSessionOff("Offerer", MakeUnique<FakeUuidGenerator>()),
       mSessionAns("Answerer", MakeUnique<FakeUuidGenerator>()) {
+    EXPECT_EQ(NS_OK, mSessionOff.Init());
+    EXPECT_EQ(NS_OK, mSessionAns.Init());
+
     AddTransportData(&mSessionOff, &mOffererTransport);
     AddTransportData(&mSessionAns, &mAnswererTransport);
   }

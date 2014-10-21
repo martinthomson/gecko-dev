@@ -263,7 +263,8 @@ public:
                                           IceConfiguration *aDst);
   already_AddRefed<DOMMediaStream> MakeMediaStream(uint32_t aHint);
 
-  nsresult CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo>* aInfo);
+  nsresult CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo>* aInfo,
+                                        const std::string& aId);
 
   // DataConnection observers
   void NotifyDataChannel(already_AddRefed<mozilla::DataChannel> aChannel);

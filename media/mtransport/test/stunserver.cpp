@@ -311,7 +311,6 @@ TestStunServer* TestStunServer::GetInstance() {
   if (!instance)
     instance = Create();
 
-  MOZ_ASSERT(instance);
   return instance;
 }
 

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cerrno>
 #include <deque>
+#include <set>
 #include <sstream>
 #include <vector>
 
@@ -418,7 +419,8 @@ PeerConnectionImpl::MakeMediaStream(uint32_t aHint)
 
 nsresult
 PeerConnectionImpl::CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo>*
-                                                 aInfo)
+                                                 aInfo,
+                                                 const std::string& aStreamID)
 {
   MOZ_ASSERT(aInfo);
   PC_AUTO_ENTER_API_CALL_NO_CHECK();
@@ -435,7 +437,7 @@ PeerConnectionImpl::CreateRemoteSourceStreamInfo(nsRefPtr<RemoteSourceStreamInfo
   static_cast<SourceMediaStream*>(stream->GetStream())->SetPullEnabled(true);
 
   nsRefPtr<RemoteSourceStreamInfo> remote;
-  remote = new RemoteSourceStreamInfo(stream.forget(), mMedia);
+  remote = new RemoteSourceStreamInfo(stream.forget(), mMedia, aStreamID);
   *aInfo = remote;
 
   return NS_OK;
@@ -1430,7 +1432,7 @@ PeerConnectionImpl::SetRemoteDescription(int32_t action, const char* aSDP)
     return NS_ERROR_FAILURE;
   }
 
-  JSErrorResult rv;
+  JSErrorResult jrv;
   nsRefPtr<PeerConnectionObserver> pco = do_QueryObjectReferent(mPCObserver);
   if (!pco) {
     return NS_OK;
@@ -1489,67 +1491,90 @@ PeerConnectionImpl::SetRemoteDescription(int32_t action, const char* aSDP)
     // appendSdpParseErrors(mSDPParseErrorMessages, &error_string, &error);
     CSFLogError(logTag, "%s: pc = %s, error = %s",
                 __FUNCTION__, mHandle.c_str(), error_string.c_str());
-    pco->OnSetRemoteDescriptionError(error, ObString(error_string.c_str()), rv);
+    pco->OnSetRemoteDescriptionError(error, ObString(error_string.c_str()), jrv);
   } else {
-    // All the stream stuff is a mess here. We just have one stream
-    // but a pile of tracks.
-    // Step 1. Verify that we have a stream.
-    nsRefPtr<sipcc::RemoteSourceStreamInfo> info;
-    if (mMedia->RemoteStreamsLength() < 1) {
-      nsresult rv = CreateRemoteSourceStreamInfo(&info);
-      if (NS_FAILED(rv)) {
-        MOZ_CRASH();  // TODO(ekr@rtfm.com): How do we recover here? We don't
-                      // want mismatches. Issue 175.
-      }
-
-      rv = mMedia->AddRemoteStream(info);
-      if (NS_FAILED(rv)) {
-        MOZ_CRASH();  // TODO(ekr@rtfm.com): How do we recover here? We don't
-                      // want mismatches. Issue 175.
-      }
-    } else {
-      info = mMedia->GetRemoteStreamByIndex(0);
-    }
-    DOMMediaStream* stream = info->GetMediaStream();
-
-    // Step 2. Add the tracks. Unfortunately, we only can really support
-    // two tracks, one audio and one video.
-    nsresult rv;
+    // Add the tracks. This code is pretty complicated because the tracks
+    // come in arbitrary orders and we want to group them by stream_id.
+    // We go through all the tracks and then for each track that represents
+    // a new stream id, go through the rest of the tracks and deal with
+    // them at once.
     size_t num_tracks = mJsepSession->num_remote_tracks();
     MOZ_ASSERT(num_tracks <= 3);
     bool hasAudio = false;
     bool hasVideo = false;
+
+    std::set<std::string> used_streams;
     for (size_t i = 0; i < num_tracks; ++i) {
       RefPtr<JsepMediaStreamTrack> track;
-      rv = mJsepSession->remote_track(i, &track);
-      if (NS_FAILED(rv)) {
+      nrv = mJsepSession->remote_track(i, &track);
+      if (NS_FAILED(nrv)) {
         MOZ_CRASH();  // TODO(ekr@rtfm.com): How do we recover here? We don't
                       // want mismatches. Issue 175.
       }
-      if (track->media_type() == mozilla::SdpMediaSection::kAudio) {
-        MOZ_ASSERT(!hasAudio);
-        hasAudio = true;
-        info->mTrackTypeHints |= DOMMediaStream::HINT_CONTENTS_AUDIO;
-      } else if (track->media_type() == mozilla::SdpMediaSection::kVideo) {
-        MOZ_ASSERT(!hasVideo);
-        hasVideo = true;
-        info->mTrackTypeHints |= DOMMediaStream::HINT_CONTENTS_VIDEO;
-      } else {
-        // Data channel, ignore.
-      }
-    }
 
-    // Notify about track availability.
-    // TODO(ekr@rtfm.com): Suppress on renegotiation when no change. Issue 155.
-    JSErrorResult jrv;
+      if (used_streams.count(track->stream_id())) {
+        // This means we have already assigned this stream.
+        continue;
+      }
+
+      nsRefPtr<sipcc::RemoteSourceStreamInfo> info =
+        mMedia->GetRemoteStreamById(track->stream_id());
+      if (!info) {
+        nsresult nrv = CreateRemoteSourceStreamInfo(&info, track->stream_id());
+        if (NS_FAILED(nrv)) {
+          MOZ_CRASH();  // TODO(ekr@rtfm.com): How do we recover here? We don't
+          // want mismatches. Issue 175.
+        }
+
+        nrv = mMedia->AddRemoteStream(info);
+        if (NS_FAILED(nrv)) {
+          MOZ_CRASH();  // TODO(ekr@rtfm.com): How do we recover here? We don't
+          // want mismatches. Issue 175.
+        }
+      }
+
+      DOMMediaStream* stream = info->GetMediaStream();
+
+      for (size_t j = i; j < num_tracks; ++j) {
+        RefPtr<JsepMediaStreamTrack> track2;
+        nrv = mJsepSession->remote_track(j, &track2);
+
+        if (track2->stream_id() != track->stream_id())
+          continue;
+
+        if (NS_FAILED(nrv)) {
+          MOZ_CRASH();  // TODO(ekr@rtfm.com): How do we recover here? We don't
+                        // want mismatches. Issue 175.
+        }
+
+        if (track2->media_type() == mozilla::SdpMediaSection::kAudio) {
+          MOZ_ASSERT(!hasAudio);
+          hasAudio = true;
+          info->mTrackTypeHints |= DOMMediaStream::HINT_CONTENTS_AUDIO;
+        } else if (track2->media_type() == mozilla::SdpMediaSection::kVideo) {
+          MOZ_ASSERT(!hasVideo);
+          hasVideo = true;
+          info->mTrackTypeHints |= DOMMediaStream::HINT_CONTENTS_VIDEO;
+        } else {
+          // Data channel, ignore.
+        }
+      }
+
+      // Mark the stream id as used.
+      used_streams.insert(track->stream_id());
+
+      // Now that the stream is all set up, notify about track availability.
+      // TODO(ekr@rtfm.com): Suppress on renegotiation when no change. Issue 155.
 
 #ifdef MOZILLA_INTERNAL_API
-    TracksAvailableCallback* tracksAvailableCallback =
-      new TracksAvailableCallback(info->mTrackTypeHints, pco);
-    stream->OnTracksAvailable(tracksAvailableCallback);
+      TracksAvailableCallback* tracksAvailableCallback =
+        new TracksAvailableCallback(info->mTrackTypeHints, pco);
+      stream->OnTracksAvailable(tracksAvailableCallback);
 #else
-    pco->OnAddStream(stream, jrv);
+      pco->OnAddStream(stream, jrv);
 #endif
+    }
+
     pco->OnSetRemoteDescriptionSuccess(jrv);
 #ifdef MOZILLA_INTERNAL_API
     // TODO(ekr@rtfm.com): This is crashing. Issue 176.
