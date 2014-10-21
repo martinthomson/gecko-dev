@@ -66,9 +66,12 @@ const SEC_ERROR_OCSP_BAD_SIGNATURE                      = SEC_ERROR_BASE + 157;
 const SEC_ERROR_CERT_SIGNATURE_ALGORITHM_DISABLED       = SEC_ERROR_BASE + 176;
 const SEC_ERROR_APPLICATION_CALLBACK_ERROR              = SEC_ERROR_BASE + 178;
 
+const SSL_ERROR_NO_CYPHER_OVERLAP                       = SSL_ERROR_BASE +   2;
+const SSL_ERROR_UNSUPPORTED_VERSION                     = SSL_ERROR_BASE +   9;
 const SSL_ERROR_BAD_CERT_DOMAIN                         = SSL_ERROR_BASE +  12;
 const SSL_ERROR_BAD_CERT_ALERT                          = SSL_ERROR_BASE +  17;
 const SSL_ERROR_HANDSHAKE_FAILURE_ALERT                 = SSL_ERROR_BASE +  61;
+const SSL_ERROR_PROTOCOL_VERSION_ALERT                  = SSL_ERROR_BASE +  98;
 const SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT            = SSL_ERROR_BASE +  131;
 
 const MOZILLA_PKIX_ERROR_KEY_PINNING_FAILURE            = MOZILLA_PKIX_ERROR_BASE +   0;
@@ -231,22 +234,14 @@ function run_test() {
 */
 function add_tls_server_setup(serverBinName) {
   add_test(function() {
-    _setupTLSServerTest(serverBinName);
+    start_tls_server(serverBinName).then(run_next_test);
   });
 }
 
-// Add a TLS connection test case. aHost is the hostname to pass in the SNI TLS
-// extension; this should unambiguously identifiy which test is being run.
-// aExpectedResult is the expected nsresult of the connection.
-// aBeforeConnect is a callback function that takes no arguments that will be
-// called before the connection is attempted.
-// aWithSecurityInfo is a callback function that takes an
-// nsITransportSecurityInfo, which is called after the TLS handshake succeeds.
-// aAfterStreamOpen is a callback function that is called with the
-// nsISocketTransport once the output stream is ready.
-function add_connection_test(aHost, aExpectedResult,
-                             aBeforeConnect, aWithSecurityInfo,
-                             aAfterStreamOpen) {
+
+/* Returns a promise to connect to aHost that resolves to the result of that
+ * connection (internal use only) */
+function _connectToHost(aHost, aAfterStreamOpen) {
   const REMOTE_PORT = 8443;
 
   function Connection(aHost) {
@@ -313,27 +308,47 @@ function add_connection_test(aHost, aExpectedResult,
     }
   };
 
-  /* Returns a promise to connect to aHost that resolves to the result of that
-   * connection */
-  function connectTo(aHost) {
-    Services.prefs.setCharPref("network.dns.localDomains", aHost);
-    let connection = new Connection(aHost);
-    return connection.go();
-  }
+  Services.prefs.setCharPref("network.dns.localDomains", aHost);
+  let connection = new Connection(aHost);
+  return connection.go();
+}
 
-  add_test(function() {
-    if (aBeforeConnect) {
-      aBeforeConnect();
-    }
-    connectTo(aHost).then(function(conn) {
+// Connect to a host.
+// aHost is the hostname to pass in the SNI TLS extension; this should
+// unambiguously identifiy which test is being run.
+// aExpectedResult is the expected nsresult of the connection.
+// aBeforeConnect is a callback function that takes no arguments that will be
+// called before the connection is attempted.
+// aWithSecurityInfo is a callback function that takes an
+// nsITransportSecurityInfo, which is called after the TLS handshake succeeds.
+// aAfterStreamOpen is a callback function that is called with the
+// nsISocketTransport once the output stream is ready.
+// Returns a promise that resolves when this is all done
+function connect_to_host(aHost, aExpectedResult,
+                         aBeforeConnect, aWithSecurityInfo,
+                         aAfterStreamOpen) {
+  return Promise.resolve()
+    .then(aBeforeConnect) // resolves immediately if aBeforeConnect is undefined
+    .then(() => _connectToHost(aHost, aAfterStreamOpen))
+    .then(conn => {
       do_print("handling " + aHost);
       do_check_eq(conn.result, aExpectedResult);
       if (aWithSecurityInfo) {
         aWithSecurityInfo(conn.transport.securityInfo
                               .QueryInterface(Ci.nsITransportSecurityInfo));
       }
-      run_next_test();
     });
+}
+
+// Add a TLS connection test case.  See connect_to_host() for arguments
+function add_connection_test(aHost, aExpectedResult,
+                             aBeforeConnect, aWithSecurityInfo,
+                             aAfterStreamOpen) {
+  add_test(function() {
+    connect_to_host(aHost, aExpectedResult,
+                    aBeforeConnect, aWithSecurityInfo,
+                    aAfterStreamOpen)
+      .then(run_next_test);
   });
 }
 
@@ -362,8 +377,10 @@ function _getBinaryUtil(binaryUtilName) {
   return utilBin;
 }
 
-// Do not call this directly; use add_tls_server_setup
-function _setupTLSServerTest(serverBinName)
+// starts a TLS server
+// returns a process that you are required to kill when you are done
+// this is more easily handled by add_tls_server_setup()
+function start_tls_server(serverBinName)
 {
   let certdb = Cc["@mozilla.org/security/x509certdb;1"]
                   .getService(Ci.nsIX509CertDB);
@@ -384,18 +401,19 @@ function _setupTLSServerTest(serverBinName)
   envSvc.set("MOZ_TLS_SERVER_DEBUG_LEVEL", "3");
   envSvc.set("MOZ_TLS_SERVER_CALLBACK_PORT", CALLBACK_PORT);
 
-  let httpServer = new HttpServer();
-  httpServer.registerPathHandler("/",
+  let serverStarted = new Promise(resolve => {
+    let httpServer = new HttpServer();
+    httpServer.registerPathHandler(
+      "/",
       function handleServerCallback(aRequest, aResponse) {
         aResponse.setStatusLine(aRequest.httpVersion, 200, "OK");
         aResponse.setHeader("Content-Type", "text/plain");
         let responseBody = "OK!";
         aResponse.bodyOutputStream.write(responseBody, responseBody.length);
-        do_execute_soon(function() {
-          httpServer.stop(run_next_test);
-        });
+        httpServer.stop(resolve);
       });
-  httpServer.start(CALLBACK_PORT);
+    httpServer.start(CALLBACK_PORT);
+  });
 
   let serverBin = _getBinaryUtil(serverBinName);
   let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);

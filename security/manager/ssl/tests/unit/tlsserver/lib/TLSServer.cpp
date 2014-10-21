@@ -4,7 +4,9 @@
 
 #include "TLSServer.h"
 
-#include <stdio.h>
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include "ScopedNSSTypes.h"
 #include "nspr.h"
 #include "nss.h"
@@ -26,14 +28,14 @@ const char DEFAULT_CERT_NICKNAME[] = "localhostAndExampleCom";
 
 struct Connection
 {
-  PRFileDesc *mSocket;
+  PRFileDesc* mSocket;
   char mByte;
 
-  explicit Connection(PRFileDesc *aSocket);
+  explicit Connection(PRFileDesc* aSocket);
   ~Connection();
 };
 
-Connection::Connection(PRFileDesc *aSocket)
+Connection::Connection(PRFileDesc* aSocket)
 : mSocket(aSocket)
 , mByte(0)
 {}
@@ -46,9 +48,9 @@ Connection::~Connection()
 }
 
 void
-PrintPRError(const char *aPrefix)
+PrintPRError(const char* aPrefix)
 {
-  const char *err = PR_ErrorToName(PR_GetError());
+  const char* err = PR_ErrorToName(PR_GetError());
   if (err) {
     if (gDebugLevel >= DEBUG_ERRORS) {
       fprintf(stderr, "%s: %s\n", aPrefix, err);
@@ -61,7 +63,7 @@ PrintPRError(const char *aPrefix)
 }
 
 nsresult
-SendAll(PRFileDesc *aSocket, const char *aData, size_t aDataLen)
+SendAll(PRFileDesc* aSocket, const char* aData, size_t aDataLen)
 {
   if (gDebugLevel >= DEBUG_VERBOSE) {
     fprintf(stderr, "sending '%s'\n", aData);
@@ -83,7 +85,7 @@ SendAll(PRFileDesc *aSocket, const char *aData, size_t aDataLen)
 }
 
 nsresult
-ReplyToRequest(Connection *aConn)
+ReplyToRequest(Connection* aConn)
 {
   // For debugging purposes, SendAll can print out what it's sending.
   // So, any strings we give to it to send need to be null-terminated.
@@ -92,9 +94,9 @@ ReplyToRequest(Connection *aConn)
 }
 
 nsresult
-SetupTLS(Connection *aConn, PRFileDesc *aModelSocket)
+SetupTLS(Connection* aConn, PRFileDesc* aModelSocket)
 {
-  PRFileDesc *sslSocket = SSL_ImportFD(aModelSocket, aConn->mSocket);
+  PRFileDesc* sslSocket = SSL_ImportFD(aModelSocket, aConn->mSocket);
   if (!sslSocket) {
     PrintPRError("SSL_ImportFD failed");
     return NS_ERROR_FAILURE;
@@ -111,7 +113,7 @@ SetupTLS(Connection *aConn, PRFileDesc *aModelSocket)
 }
 
 nsresult
-ReadRequest(Connection *aConn)
+ReadRequest(Connection* aConn)
 {
   int32_t bytesRead = PR_Recv(aConn->mSocket, &aConn->mByte, 1, 0,
                               PR_INTERVAL_NO_TIMEOUT);
@@ -131,7 +133,7 @@ ReadRequest(Connection *aConn)
 }
 
 void
-HandleConnection(PRFileDesc *aSocket, PRFileDesc *aModelSocket)
+HandleConnection(PRFileDesc* aSocket, PRFileDesc* aModelSocket)
 {
   Connection conn(aSocket);
   nsresult rv = SetupTLS(&conn, aModelSocket);
@@ -169,7 +171,7 @@ DoCallback()
     return 1;
   }
 
-  const char *request = "GET / HTTP/1.0\r\n\r\n";
+  const char* request = "GET / HTTP/1.0\r\n\r\n";
   SendAll(socket, request, strlen(request));
   char buf[4096];
   memset(buf, 0, sizeof(buf));
@@ -188,9 +190,9 @@ DoCallback()
 }
 
 SECStatus
-ConfigSecureServerWithNamedCert(PRFileDesc *fd, const char *certName,
-                                /*optional*/ ScopedCERTCertificate *certOut,
-                                /*optional*/ SSLKEAType *keaOut)
+ConfigSecureServerWithNamedCert(PRFileDesc* fd, const char* certName,
+                                /*optional*/ ScopedCERTCertificate* certOut,
+                                /*optional*/ SSLKEAType* keaOut)
 {
   ScopedCERTCertificate cert(PK11_FindCertFromNickname(certName, nullptr));
   if (!cert) {
@@ -265,10 +267,9 @@ ConfigSecureServerWithNamedCert(PRFileDesc *fd, const char *certName,
 }
 
 int
-StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
-            void *sniSocketConfigArg)
+InitServer(const char* nssCertDBDir)
 {
-  const char *debugLevel = PR_GetEnv("MOZ_TLS_SERVER_DEBUG_LEVEL");
+  const char* debugLevel = PR_GetEnv("MOZ_TLS_SERVER_DEBUG_LEVEL");
   if (debugLevel) {
     int level = atoi(debugLevel);
     switch (level) {
@@ -281,7 +282,7 @@ StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
     }
   }
 
-  const char *callbackPort = PR_GetEnv("MOZ_TLS_SERVER_CALLBACK_PORT");
+  const char* callbackPort = PR_GetEnv("MOZ_TLS_SERVER_CALLBACK_PORT");
   if (callbackPort) {
     gCallbackPort = atoi(callbackPort);
   }
@@ -300,7 +301,12 @@ StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
     PrintPRError("SSL_ConfigServerSessionIDCache failed");
     return 1;
   }
+  return 0;
+}
 
+int
+StartServer(SSLSNISocketConfig sniSocketConfig, void* sniSocketConfigArg)
+{
   ScopedPRFileDesc serverSocket(PR_NewTCPSocket());
   if (!serverSocket) {
     PrintPRError("PR_NewTCPSocket failed");
@@ -359,7 +365,7 @@ StartServer(const char *nssCertDBDir, SSLSNISocketConfig sniSocketConfig,
 
   while (true) {
     PRNetAddr clientAddr;
-    PRFileDesc *clientSocket = PR_Accept(serverSocket, &clientAddr,
+    PRFileDesc* clientSocket = PR_Accept(serverSocket, &clientAddr,
                                          PR_INTERVAL_NO_TIMEOUT);
     HandleConnection(clientSocket, modelSocket);
   }
