@@ -68,6 +68,8 @@ const SEC_ERROR_APPLICATION_CALLBACK_ERROR              = SEC_ERROR_BASE + 178;
 
 const SSL_ERROR_BAD_CERT_DOMAIN                         = SSL_ERROR_BASE +  12;
 const SSL_ERROR_BAD_CERT_ALERT                          = SSL_ERROR_BASE +  17;
+const SSL_ERROR_HANDSHAKE_FAILURE_ALERT                 = SSL_ERROR_BASE +  61;
+const SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT            = SSL_ERROR_BASE +  131;
 
 const MOZILLA_PKIX_ERROR_KEY_PINNING_FAILURE            = MOZILLA_PKIX_ERROR_BASE +   0;
 const MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY     = MOZILLA_PKIX_ERROR_BASE +   1;
@@ -398,15 +400,19 @@ function _setupTLSServerTest(serverBinName)
   let serverBin = _getBinaryUtil(serverBinName);
   let process = Cc["@mozilla.org/process/util;1"].createInstance(Ci.nsIProcess);
   process.init(serverBin);
+  do_register_cleanup(function() {
+    if (process.isRunning) {
+      process.kill();
+    }
+  });
+
   let certDir = directoryService.get("CurWorkD", Ci.nsILocalFile);
   certDir.append("tlsserver");
   do_check_true(certDir.exists());
   // Using "sql:" causes the SQL DB to be used so we can run tests on Android.
   process.run(false, [ "sql:" + certDir.path ], 1);
 
-  do_register_cleanup(function() {
-    process.kill();
-  });
+  return serverStarted.then(() => process);
 }
 
 // Returns an Array of OCSP responses for a given ocspRespArray and a location
