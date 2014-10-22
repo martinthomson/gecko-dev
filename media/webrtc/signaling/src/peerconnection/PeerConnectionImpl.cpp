@@ -708,6 +708,12 @@ PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   mJsepSession = MakeUnique<JsepSessionImpl>(mName,
                                              MakeUnique<PCUuidGenerator>());
 
+  res = mJsepSession->Init();
+  if (NS_FAILED(res)) {
+    CSFLogError(logTag, "%s: Couldn't init JSEP Session", __FUNCTION__);
+    return res;
+  }
+
   res = mJsepSession->SetIceCredentials(mMedia->ice_ctx()->ufrag(),
                                         mMedia->ice_ctx()->pwd());
   if (NS_FAILED(res)) {

@@ -1016,11 +1016,11 @@ nsresult JsepSessionImpl::SetRemoteDescriptionAnswer(
              mState == kJsepStateHaveRemotePranswer);
   mPendingRemoteDescription = Move(answer);
 
-  nsresult rv = HandleNegotiatedSession(mPendingLocalDescription,
-                                        mPendingRemoteDescription);
+  nsresult rv = SetRemoteTracksFromDescription(*mPendingRemoteDescription);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = SetRemoteTracksFromDescription(*mPendingRemoteDescription);
+  rv = HandleNegotiatedSession(mPendingLocalDescription,
+                               mPendingRemoteDescription);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mCurrentRemoteDescription = Move(mPendingRemoteDescription);
