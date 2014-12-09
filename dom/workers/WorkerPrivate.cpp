@@ -2362,7 +2362,7 @@ WorkerPrivateParent<Derived>::Suspend(JSContext* aCx, nsPIDOMWindow* aWindow)
   // Shared workers are only suspended if all of their owning documents are
   // suspended. It can happen that mSharedWorkers is empty but this thread has
   // not been unregistered yet.
-  if ((IsSharedWorker() || IsServiceWorker()) && mSharedWorkers.Count()) {
+  if ((IsSharedWorker() || IsServiceWorker()) && mSharedWorkers.Length()) {
     AssertIsOnMainThread();
 
     bool allSuspended = true;
@@ -2415,7 +2415,7 @@ WorkerPrivateParent<Derived>::Resume(JSContext* aCx, nsPIDOMWindow* aWindow)
   // Shared workers are resumed if any of their owning documents are resumed.
   // It can happen that mSharedWorkers is empty but this thread has not been
   // unregistered yet.
-  if ((IsSharedWorker() || IsServiceWorker()) && mSharedWorkers.Count()) {
+  if ((IsSharedWorker() || IsServiceWorker()) && mSharedWorkers.Length()) {
     AssertIsOnMainThread();
 
     bool anyRunning = false;

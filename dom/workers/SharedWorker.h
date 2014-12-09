@@ -46,17 +46,13 @@ public:
               const nsAString& aScriptURL, const Optional<nsAString>& aName,
               ErrorResult& aRv);
 
-<<<<<<< HEAD
-  already_AddRefed<mozilla::dom::workers::MessagePort>
-=======
   static already_AddRefed<SharedWorker>
   Constructor(const GlobalObject& aGlobal, JSContext* aCx,
               const nsAString& aScriptURL, const Optional<nsAString>& aName,
               nsRefPtr<WorkerGlobalScopeFactory>& aGlobalScopeFactory,
               ErrorResult& aRv);
 
-  already_AddRefed<MessagePort>
->>>>>>> Bug XXXXXXX - Adding ability to create custom worker scopes
+  already_AddRefed<mozilla::dom::workers::MessagePort>
   Port();
 
   uint64_t

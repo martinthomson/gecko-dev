@@ -322,7 +322,7 @@ public:
   Instance()
   {
     nsRefPtr<WorkerGlobalScopeFactory> f
-      = new ServiceWorkerGlobalScopeFactory();
+      = new SharedWorkerGlobalScopeFactory();
     return f.forget();
   }
 
