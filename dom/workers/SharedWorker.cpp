@@ -51,6 +51,19 @@ SharedWorker::Constructor(const GlobalObject& aGlobal, JSContext* aCx,
                           const mozilla::dom::Optional<nsAString>& aName,
                           ErrorResult& aRv)
 {
+  nsRefPtr<WorkerGlobalScopeFactory> nullFactory;
+  return SharedWorker::Constructor(aGlobal, aCx, aScriptURL, aName,
+                                   nullFactory, aRv);
+}
+
+// static
+already_AddRefed<SharedWorker>
+SharedWorker::Constructor(const GlobalObject& aGlobal, JSContext* aCx,
+                          const nsAString& aScriptURL,
+                          const mozilla::dom::Optional<nsAString>& aName,
+                          nsRefPtr<WorkerGlobalScopeFactory>& aGlobalScopeFactory,
+                          ErrorResult& aRv)
+{
   AssertIsOnMainThread();
 
   RuntimeService* rts = RuntimeService::GetOrCreateService();
@@ -66,6 +79,7 @@ SharedWorker::Constructor(const GlobalObject& aGlobal, JSContext* aCx,
 
   nsRefPtr<SharedWorker> sharedWorker;
   nsresult rv = rts->CreateSharedWorker(aGlobal, aScriptURL, name,
+                                        aGlobalScopeFactory,
                                         getter_AddRefs(sharedWorker));
   if (NS_FAILED(rv)) {
     aRv = rv;

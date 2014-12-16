@@ -12,6 +12,7 @@
 
 #include "nsIObserver.h"
 
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
@@ -141,11 +142,8 @@ public:
   CreateSharedWorker(const GlobalObject& aGlobal,
                      const nsAString& aScriptURL,
                      const nsACString& aName,
-                     SharedWorker** aSharedWorker)
-  {
-    return CreateSharedWorkerInternal(aGlobal, aScriptURL, aName,
-                                      WorkerTypeShared, aSharedWorker);
-  }
+                     nsRefPtr<WorkerGlobalScopeFactory>& aGlobalScopeFactory,
+                     SharedWorker** aSharedWorker);
 
   nsresult
   CreateServiceWorker(const GlobalObject& aGlobal,
@@ -304,6 +302,7 @@ private:
                              const nsAString& aScriptURL,
                              const nsACString& aName,
                              WorkerType aType,
+                             nsRefPtr<WorkerGlobalScopeFactory>& aWorkerScopeFactory,
                              SharedWorker** aSharedWorker);
 
   nsresult
@@ -312,8 +311,54 @@ private:
                                  const nsAString& aScriptURL,
                                  const nsACString& aName,
                                  WorkerType aType,
+                                 nsRefPtr<WorkerGlobalScopeFactory>& aWorkerScopeFactory,
                                  SharedWorker** aSharedWorker);
 };
+
+class SharedWorkerGlobalScopeFactory MOZ_FINAL
+  : public WorkerGlobalScopeFactory
+{
+public:
+  static already_AddRefed<WorkerGlobalScopeFactory>
+  Instance()
+  {
+    if (!sInstance) {
+      sInstance = new SharedWorkerGlobalScopeFactory();
+      ClearOnShutdown(&sInstance);
+    }
+    nsRefPtr<WorkerGlobalScopeFactory> f = sInstance.get();
+    return f.forget();
+  }
+
+  virtual already_AddRefed<WorkerGlobalScope>
+  CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
+                    const nsACString& aWorkerName);
+private:
+  static StaticRefPtr<WorkerGlobalScopeFactory> sInstance;
+};
+
+class ServiceWorkerGlobalScopeFactory MOZ_FINAL
+  : public WorkerGlobalScopeFactory
+{
+public:
+  static already_AddRefed<WorkerGlobalScopeFactory>
+  Instance()
+  {
+    if (!sInstance) {
+      sInstance = new ServiceWorkerGlobalScopeFactory();
+      ClearOnShutdown(&sInstance);
+    }
+    nsRefPtr<WorkerGlobalScopeFactory> f = sInstance.get();
+    return f.forget();
+  }
+
+  virtual already_AddRefed<WorkerGlobalScope>
+  CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
+                    const nsACString& aWorkerName);
+private:
+  static StaticRefPtr<WorkerGlobalScopeFactory> sInstance;
+};
+
 
 END_WORKERS_NAMESPACE
 
