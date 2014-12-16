@@ -24,11 +24,11 @@ function getIdentityAssertion(fingerprints, callback) {
     is(wrappedResponse.type, "SUCCESS",
        "IdP provided successful response");
     var assertion = btoa(JSON.stringify(wrappedResponse.message));
-    idp.close();
+    idp.stop();
     callback(assertion);
   }
 
-  idp = new IdpProxy("example.com", "idp.html");
+  idp = new IdpProxy(window, "example.com", "idp.js");
   idp.start(handleFailure);
   idp.send({
     type: "SIGN",
@@ -78,20 +78,20 @@ function testMultipleFingerprints() {
 
     pcDouble.createOffer(function(offer) {
       ok(offer, "Got offer");
-      var fp = offer.sdp.match(fingerprintRegex);
-      if (!fp) {
+      var m = offer.sdp.match(fingerprintRegex);
+      if (!m) {
         finished(false, "No fingerprint in offer SDP");
         return;
       }
 
-      var fingerprints = makeFingerprints(fp[1], fp[2]);
+      var fingerprints = makeFingerprints(m[1], m[2]);
       getIdentityAssertion(fingerprints, function(assertion) {
         ok(assertion, "Should have assertion");
 
-        var sdp = offer.sdp.slice(0, fp.index) +
+        var sdp = offer.sdp.slice(0, m.index) +
           "a=identity:" + assertion + "\n" +
           fingerprintSdp(fingerprints.slice(1)) +
-          offer.sdp.slice(fp.index);
+          offer.sdp.slice(m.index);
 
         var desc = new mozRTCSessionDescription({ type: "offer", sdp: sdp });
         pcStrict.setRemoteDescription(desc, function() {
