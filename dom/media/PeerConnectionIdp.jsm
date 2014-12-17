@@ -46,18 +46,19 @@ PeerConnectionIdp.prototype = {
     this.username = username;
     if (this._idpchannel) {
       if (this._idpchannel.isSame(provider, protocol)) {
+        dump("Reusing " + provider + "::" + protocol + "\n");
         return;
       }
-      this._idpchannel.close();
+      this._idpchannel.stop();
     }
-    this._idpchannel = new IdpProxy(provider, protocol);
+    this._idpchannel = new IdpProxy(this._win, provider, protocol);
   },
 
   close: function() {
     this.assertion = null;
     this.provider = null;
     if (this._idpchannel) {
-      this._idpchannel.close();
+      this._idpchannel.stop();
       this._idpchannel = null;
     }
   },
