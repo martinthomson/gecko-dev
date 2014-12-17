@@ -16,8 +16,72 @@ const {
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "Sandbox",
-                                  "resource://gre/modules/identity/Sandbox.jsm");
+/** This little function ensures that redirects maintain an https:// origin */
+function RedirectHttpsOnly() {}
+RedirectHttpsOnly.prototype = {
+  asyncOnChannelRedirect: function(oldChannel, newChannel, flags, callback) {
+    if (newChannel.URI.scheme !== 'https') {
+      throw Cr.NS_ERROR_ENTITY_CHANGED;
+    }
+    callback.onRedirectVerifyCallback(Cr.NS_OK);
+  },
+
+  getInterface: function(iid) {
+    return this.QueryInterface(iid);
+  },
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIChannelEventSink])
+};
+
+function IdpLoaderStreamListener(res, rej) {
+  this.resolve = res;
+  this.reject = rej;
+  this.data = '';
+}
+IdpLoaderStreamListener.prototype = {
+  onDataAvailable: function(request, context, input, offset, count) {
+    let stream = Cc["@mozilla.org/scriptableinputstream;1"]
+      .createInstance(Ci.nsIScriptableInputStream);
+    stream.init(input);
+    this.data += stream.read(count)
+  },
+
+  onStartRequest: function (request, context) {},
+
+  onStopRequest: function(request, context, status) {
+    if (Components.isSuccessCode(status)) {
+      this.resolve({ request: request, data: this.data });
+    } else {
+      this.reject(new Error('Load failed: ' + status));
+    }
+  },
+
+  getInterface: function(iid) {
+    return this.QueryInterface(iid);
+  },
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIStreamListener])
+};
+
+/**
+ * Creates an object that is superficially equivalent to window.location
+ * for the sandboxed code to look at.
+ */
+function createLocationFromURI(uri) {
+  return {
+    href: uri.spec,
+    protocol: uri.scheme + ':',
+    host: uri.host + ((uri.port !== 443) ?
+                      (':' + uri.port) : ''),
+    port: uri.port,
+    hostname: uri.host,
+    pathname: uri.path.replace(/[#\?].*/, ''),
+    search: uri.path.replace(/^[^\?]*/, '').replace(/#.*/, ''),
+    hash: uri.hasRef ? ('#' + uri.ref) : '',
+    origin: uri.prePath,
+    toString: function() {
+      return uri.spec;
+    }
+  };
+}
 
 /**
  * An invisible iframe for hosting the idp shim.
@@ -25,81 +89,113 @@ XPCOMUtils.defineLazyModuleGetter(this, "Sandbox",
  * There is no visible UX here, as we assume the user has already
  * logged in elsewhere (on a different screen in the web site hosting
  * the RTC functions).
+ *
+ * @param win (object) the hosting window
+ * @param uri (nsIURI) URI to load
+ * @param name (string) name of the worker
+ * @param messageCallback (function) callback to invoke on the arrival
+ *     of messages from the IdP
  */
-function IdpChannel(uri, messageCallback) {
+function IdpSandbox(win, uri, messageCallback) {
+  this.window = win;
+  this.active = false;
   this.sandbox = null;
-  this.messagechannel = null;
   this.source = uri;
   this.messageCallback = messageCallback;
 }
 
-IdpChannel.prototype = {
+IdpSandbox.prototype = {
   /**
-   * Create a hidden, sandboxed iframe for hosting the IdP's js shim.
-   *
-   * @param callback
-   *                (function) invoked when this completes, with an error
-   *                argument if there is a problem, no argument if everything is
-   *                ok
+   * Create a sandbox for hosting the IdP's js shim.
+   * @return a promise that resolves when the sandbox opens
    */
-  open: function(callback) {
-    if (this.sandbox) {
-      return callback(new Error("IdP channel already open"));
+  open: function() {
+    if (this.active) {
+      throw new Error("IdP channel already active");
     }
+    this.active = true;
 
-    let ready = this._sandboxReady.bind(this, callback);
-    this.sandbox = new Sandbox(this.source, ready);
+    return new Promise((resolve, reject) => this._load(resolve, reject))
+      .then(result => this._createSandbox(result));
   },
 
-  _sandboxReady: function(aCallback, aSandbox) {
-    // Inject a message channel into the subframe.
-    try {
-      this.messagechannel = new aSandbox._frame.contentWindow.MessageChannel();
-      Object.defineProperty(
-        aSandbox._frame.contentWindow.wrappedJSObject,
-        "rtcwebIdentityPort",
-        {
-          value: this.messagechannel.port2
-        }
-      );
-    } catch (e) {
-      this.close();
-      aCallback(e); // oops, the IdP proxy overwrote this.. bad
-      return;
-    }
-    this.messagechannel.port1.onmessage = function(msg) {
-      this.messageCallback(msg.data);
-    }.bind(this);
-    this.messagechannel.port1.start();
-    aCallback();
+  _load: function(resolve, reject) {
+    let listener = new IdpLoaderStreamListener(resolve, reject);
+    let ioService = Cc['@mozilla.org/network/io-service;1']
+      .getService(Ci.nsIIOService);
+    let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
+    let ioChannel = ioService.newChannelFromURI2(this.source, null, systemPrincipal,
+                                                 systemPrincipal, 0, 2);
+    ioChannel.notificationCallbacks = new RedirectHttpsOnly();
+    ioChannel.asyncOpen(listener, null);
+  },
+
+  _createSandbox: function(result) {
+    let principal = Services.scriptSecurityManager
+      .getChannelResultPrincipal(result.request);
+
+    this.sandbox = Cu.Sandbox(principal, {
+      sandboxName: 'WebRTC-IdP-' + this.source.host,
+      wantXrays: false,
+      wantComponents: false,
+      wantExportHelpers: false,
+      wantGlobalProperties: [
+        'indexedDB', 'XMLHttpRequest', 'TextEncoder', 'TextDecoder',
+        'URL', 'URLSearchParams', 'atob', 'btoa', 'Blob', 'File'
+      ]
+    });
+
+     // this relies on getting an xray on the window
+    let msgChannel = new this.window.MessageChannel();
+    this.port = msgChannel.port1;
+    this.port.addEventListener('message', e => this.messageCallback(e.data));
+    this.sandbox.webrtcIdentityPort = Cu.cloneInto(msgChannel.port2,
+                                                   this.sandbox,
+                                                   {
+                                                     wrapReflectors: true,
+                                                     cloneFunctions: true
+                                                   });
+
+    // a minimal set of extra tools; it is easier to add more, than take back
+    this.sandbox.location = Cu.cloneInto(createLocationFromURI(this.source),
+                                         this.sandbox,
+                                         { cloneFunctions: true });
+    this.sandbox.setTimeout = this.window.setTimeout;
+    this.sandbox.clearTimeout = this.window.clearTimeout;
+
+
+    // putting a javascript version of 1.8 here seems fragile
+    Cu.evalInSandbox(result.data, this.sandbox,
+                     '1.8', result.request.URI.spec, 1);
   },
 
   send: function(msg) {
-    this.messagechannel.port1.postMessage(msg);
+    dump('browser>' + JSON.stringify(msg) + '\n');
+    this.port.postMessage(msg);
   },
 
-  close: function IdpChannel_close() {
+  close: function() {
     if (this.sandbox) {
-      if (this.messagechannel) {
-        this.messagechannel.port1.close();
-      }
-      this.sandbox.free();
+      Cu.nukeSandbox(this.sandbox);
     }
-    this.messagechannel = null;
     this.sandbox = null;
+    this.port = null;
+    this.active = false;
   }
 };
 
 /**
  * A message channel between the RTC PeerConnection and a designated IdP Proxy.
  *
+ * @param win (object) the hosting window
  * @param domain (string) the domain to load up
  * @param protocol (string) Optional string for the IdP protocol
  */
-function IdpProxy(domain, protocol) {
+function IdpProxy(win, domain, protocol) {
   IdpProxy.validateDomain(domain);
   IdpProxy.validateProtocol(protocol);
 
+  this.window = win;
   this.domain = domain;
   this.protocol = protocol || "default";
 
@@ -127,7 +223,8 @@ IdpProxy.validateDomain = function(domain) {
     if (uri.hostPort !== domain) {
       throw new Error(message);
     }
-  } catch (e if (e.result === Cr.NS_ERROR_MALFORMED_URI)) {
+  } catch (e if (typeof e.result !== "undefined" &&
+                 e.result === Cr.NS_ERROR_MALFORMED_URI)) {
     throw new Error(message);
   }
 };
@@ -165,27 +262,22 @@ IdpProxy.prototype = {
   },
 
   /**
-   * Get a sandboxed iframe for hosting the idp-proxy's js. Create a message
-   * channel down to the frame.
-   *
-   * @param errorCallback (function) a callback that will be invoked if there
-   *                is a fatal error starting the proxy
+   * Start the IdP proxy.  This completes asynchronously, but the object is
+   * immediately usable because we enqueue messages until the proxy indicates
+   * that it's ready.
    */
-  start: function(errorCallback) {
+  start: function() {
     if (this.channel) {
       return;
     }
     let well_known = "https://" + this.domain;
     well_known += "/.well-known/idp-proxy/" + this.protocol;
-    this.channel = new IdpChannel(well_known, this._messageReceived.bind(this));
-    this.channel.open(function(error) {
-      if (error) {
-        this.close();
-        if (typeof errorCallback === "function") {
-          errorCallback(error);
-        }
-      }
-    }.bind(this));
+    let ioService = Components.classes["@mozilla.org/network/io-service;1"]
+                    .getService(Components.interfaces.nsIIOService);
+    let uri = ioService.newURI(well_known, null, null);
+    this.channel = new IdpSandbox(this.window, uri,
+                                  this._messageReceived.bind(this));
+    this.channel.open();
   },
 
   /**
@@ -221,9 +313,9 @@ IdpProxy.prototype = {
     }
     if (!this.ready && message.type === "READY") {
       this.ready = true;
-      this.pending.forEach(function(p) {
+      this.pending.forEach(p => {
         this.send(p.message, p.callback);
-      }, this);
+      });
       this.pending = [];
     } else if (this.tracking[message.id]) {
       var callback = this.tracking[message.id];
@@ -240,7 +332,7 @@ IdpProxy.prototype = {
   /**
    * Performs cleanup.  The object should be OK to use again.
    */
-  close: function() {
+  stop: function() {
     if (!this.channel) {
       return;
     }
@@ -252,15 +344,11 @@ IdpProxy.prototype = {
     this.channel.close();
     this._reset();
 
-    // dump a message of type "ERROR" in response to all outstanding
+    // generate a message of type "ERROR" in response to all outstanding
     // messages to the IdP
     let error = { type: "ERROR", error: "IdP closed" };
-    Object.keys(trackingCopy).forEach(function(k) {
-      trackingCopy[k](error);
-    });
-    pendingCopy.forEach(function(p) {
-      p.callback(error);
-    });
+    Object.keys(trackingCopy).forEach(k => trackingCopy[k](error));
+    pendingCopy.forEach(p => p.callback(error));
   },
 
   toString: function() {
