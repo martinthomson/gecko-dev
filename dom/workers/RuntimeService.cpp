@@ -61,6 +61,7 @@
 #include "SharedWorker.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
+#include "WorkerScope.h"
 #include "WorkerThread.h"
 
 #ifdef ENABLE_TESTS

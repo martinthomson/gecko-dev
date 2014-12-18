@@ -35,6 +35,7 @@ public:
   CreateGlobalScope(workers::WorkerPrivate* aWorkerPrivate,
                     const nsACString& aWorkerName)
   {
+    aWorkerPrivate->AssertIsOnWorkerThread();
     nsRefPtr<workers::WorkerGlobalScope> scope;
     scope = new workers::PeerConnectionIdpScope(aWorkerPrivate);
     return scope.forget();

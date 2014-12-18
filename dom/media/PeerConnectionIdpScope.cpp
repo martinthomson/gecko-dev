@@ -22,7 +22,10 @@ PeerConnectionIdpScope::PeerConnectionIdpScope(WorkerPrivate* aWorkerPrivate)
 {}
 
 
-NS_IMPL_ISUPPORTS_INHERITED0(PeerConnectionIdpScope, WorkerGlobalScope)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(PeerConnectionIdpScope)
+NS_INTERFACE_MAP_END_INHERITING(WorkerGlobalScope)
+NS_IMPL_ADDREF_INHERITED(PeerConnectionIdpScope, WorkerGlobalScope)
+NS_IMPL_RELEASE_INHERITED(PeerConnectionIdpScope, WorkerGlobalScope)
 NS_IMPL_CYCLE_COLLECTION_INHERITED(PeerConnectionIdpScope,
                                    WorkerGlobalScope, mPort)
 
@@ -47,7 +50,10 @@ PeerConnectionIdpScope::WebrtcIdentityPort() const
   return port.forget();
 }
 
-NS_IMPL_ISUPPORTS_INHERITED0(PeerConnectionIdpScopePort, MessagePortBase)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION_INHERITED(PeerConnectionIdpScopePort)
+NS_INTERFACE_MAP_END_INHERITING(MessagePortBase)
+NS_IMPL_ADDREF_INHERITED(PeerConnectionIdpScopePort, MessagePortBase)
+NS_IMPL_RELEASE_INHERITED(PeerConnectionIdpScopePort, MessagePortBase)
 NS_IMPL_CYCLE_COLLECTION_INHERITED(PeerConnectionIdpScopePort,
                                    MessagePortBase, mWorker)
 

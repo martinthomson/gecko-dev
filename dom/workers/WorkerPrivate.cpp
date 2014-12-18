@@ -3765,6 +3765,7 @@ public:
   CreateGlobalScope(WorkerPrivate* aWorkerPrivate,
                     const nsACString& aWorkerName)
   {
+    aWorkerPrivate->AssertIsOnWorkerThread();
     nsRefPtr<WorkerGlobalScope> scope;
     scope = new DedicatedWorkerGlobalScope(aWorkerPrivate);
     return scope.forget();

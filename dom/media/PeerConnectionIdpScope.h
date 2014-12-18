@@ -13,6 +13,7 @@
 #include "jsapi.h"
 #include "WorkerScope.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/dom/MessagePort.h"
 
 namespace mozilla {
 namespace dom {
