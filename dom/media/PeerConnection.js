@@ -911,7 +911,7 @@ RTCPeerConnection.prototype = {
       return null;
     }
 
-    sdp = this._localIdp.wrapSdp(sdp);
+    sdp = this._localIdp.addIdentityAttribute(sdp);
     return new this._win.mozRTCSessionDescription({ type: this._localType,
                                                     sdp: sdp });
   },
@@ -1067,15 +1067,20 @@ PeerConnectionObserver.prototype = {
 
   onCreateOfferSuccess: function(sdp) {
     let pc = this._dompc;
-    let fp = pc._impl.fingerprint;
-    let origin = Cu.getWebIDLCallerPrincipal().origin;
-    pc._localIdp.appendIdentityToSDP(sdp, fp, origin, function(sdp, assertion) {
-      if (assertion) {
-        pc._gotIdentityAssertion(assertion);
-      }
+    let idp = pc._localIdp;
+
+    if (idp.enabled) {
+      idp.getIdentityAssertion(pc._impl.fingerprint)
+        .then(assertion => {
+          pc._gotIdentityAssertion(assertion);
+          sdp = idp.addIdentityAttribute(sdp);
+          pc._onCreateOfferSuccess(new pc._win.mozRTCSessionDescription({ type: "offer",
+                                                                          sdp: sdp }));
+        }, e => {}); // swallow errors and rely on good IdP reporting
+    } else {
       pc._onCreateOfferSuccess(new pc._win.mozRTCSessionDescription({ type: "offer",
                                                                       sdp: sdp }));
-    }.bind(this));
+    }
   },
 
   onCreateOfferError: function(code, message) {
@@ -1084,15 +1089,20 @@ PeerConnectionObserver.prototype = {
 
   onCreateAnswerSuccess: function(sdp) {
     let pc = this._dompc;
-    let fp = pc._impl.fingerprint;
-    let origin = Cu.getWebIDLCallerPrincipal().origin;
-    pc._localIdp.appendIdentityToSDP(sdp, fp, origin, function(sdp, assertion) {
-      if (assertion) {
-        pc._gotIdentityAssertion(assertion);
-      }
+    let idp = pc._localIdp;
+
+    if (idp.enabled) {
+      idp.getIdentityAssertion(pc._impl.fingerprint)
+        .then(assertion => {
+          pc._gotIdentityAssertion(assertion);
+          sdp = idp.addIdentityAttribute(sdp);
+          pc._onCreateAnswerSuccess(new pc._win.mozRTCSessionDescription({ type: "answer",
+                                                                           sdp: sdp }));
+        }, e => {}); // swallow errors and rely on good IdP reporting
+    } else {
       pc._onCreateAnswerSuccess(new pc._win.mozRTCSessionDescription({ type: "answer",
                                                                        sdp: sdp }));
-    }.bind(this));
+    }
   },
 
   onCreateAnswerError: function(code, message) {
