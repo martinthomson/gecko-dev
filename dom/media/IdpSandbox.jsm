@@ -86,7 +86,7 @@ function createLocationFromURI(uri) {
   return {
     href: uri.spec,
     protocol: uri.scheme + ':',
-    host: uri.host + ((uri.port !== 443) ?
+    host: uri.host + ((uri.port >= 0) ?
                       (':' + uri.port) : ''),
     port: uri.port,
     hostname: uri.host,
@@ -103,14 +103,12 @@ function createLocationFromURI(uri) {
 /**
  * A javascript sandbox for running an IdP.
  *
- * @param win (object) the hosting window
  * @param domain (string) the domain of the IdP
  * @param protocol (string?) the protocol of the IdP [default: 'default']
  * @throws if the domain or protocol aren't valid
  */
-function IdpSandbox(win, domain, protocol) {
-  this.window = win;
-  this.source = IdpSandbox.createIdpUri(domain, protocol);;
+function IdpSandbox(domain, protocol) {
+  this.source = IdpSandbox.createIdpUri(domain, protocol || "default");
   this.registered = false;
   this.active = null;;
   this.sandbox = null;
@@ -148,11 +146,10 @@ IdpSandbox.createIdpUri = function(domain, protocol) {
 
   let message = 'Invalid IdP parameters: ';
   try {
-    let well_known = 'https://' + this.domain;
-    well_known += '/.well-known/idp-proxy/' + this.protocol;
+    let wkIdp = 'https://' + domain + '/.well-known/idp-proxy/' + protocol;
     let ioService = Components.classes['@mozilla.org/network/io-service;1']
                     .getService(Ci.nsIIOService);
-    let uri = ioService.newURI(well_known, null, null);
+    let uri = ioService.newURI(wkIdp, null, null);
 
     if (uri.hostPort !== domain) {
       throw new Error(message + 'domain is invalid');
@@ -174,6 +171,10 @@ IdpSandbox.prototype = {
    */
   get idp() {
     return this.active;
+  },
+
+  isSame: function(domain, protocol) {
+    return this.source.spec === IdpSandbox.createIdpUri(domain, protocol).spec;
   },
 
   start: function() {
@@ -198,7 +199,7 @@ IdpSandbox.prototype = {
       .getChannelResultPrincipal(result.request);
 
     this.sandbox = Cu.Sandbox(principal, {
-      sandboxName: 'WebRTC-IdP-' + this.source.host,
+      sandboxName: 'IdP-' + this.source.host,
       wantXrays: false,
       wantComponents: false,
       wantExportHelpers: false,
@@ -216,12 +217,16 @@ IdpSandbox.prototype = {
     Cu.exportFunction(idp => {
       this.registered = true;
       resolveRegistration(idp);
-    }, sandbox, { defineAs: 'registerWebrtcIdentityProvider' });
+    }, this.sandbox, { defineAs: 'registerIdentityProvider' });
 
     // putting a javascript version of 1.8 here seems fragile
     Cu.evalInSandbox(result.data, this.sandbox,
                      '1.8', result.request.URI.spec, 1);
     return idpRegistered;
+  },
+
+  wrap: function(obj) {
+    return Cu.cloneInto(obj, this.sandbox, {});
   },
 
   stop: function() {

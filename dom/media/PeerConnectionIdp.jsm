@@ -68,11 +68,12 @@ PeerConnectionIdp.prototype = {
     this.username = username;
     if (this._idp) {
       if (this._idp.isSame(provider, protocol)) {
+        dump(">>>>Reusing IdP\n");
         return; // noop
       }
       this._idp.stop();
     }
-    this._idp = new IdpSandbox(this._win, provider, protocol);
+    this._idp = new IdpSandbox(provider, protocol);
   },
 
   close: function() {
@@ -115,6 +116,14 @@ PeerConnectionIdp.prototype = {
     return Object.keys(fingerprints).map(k => fingerprints[k]);
   },
 
+  _isValidAssertion: function(assertion) {
+    return assertion && assertion.idp &&
+      typeof assertion.idp.domain === 'string' &&
+      (!assertion.idp.protocol ||
+       typeof assertion.idp.protocol === 'string') &&
+      typeof assertion.assertion === 'string';
+  },
+
   _getIdentityFromSdp: function(sdp) {
     // a=identity is session level
     let mLineMatch = sdp.match(PeerConnectionIdp._mLinePattern);
@@ -128,9 +137,7 @@ PeerConnectionIdp.prototype = {
         this.reportError("validation",
                          "invalid identity assertion: " + e);
       } // for JSON.parse
-      if (typeof assertion.idp === "object" &&
-          typeof assertion.idp.domain === "string" &&
-          typeof assertion.assertion === "string") {
+      if (this._isValidAssertion(assertion)) {
         return assertion;
       }
 
@@ -215,7 +222,7 @@ PeerConnectionIdp.prototype = {
     };
     if (!Array.isArray(contents.fingerprint) &&
         !fingerprint.every(isFingerprint)) {
-      error("validation doesn't contain an array of fingerprints");
+      error("no fingerprints specified");
     }
 
     let isSubsetOf = (outer, inner, cmp) => {
@@ -227,7 +234,7 @@ PeerConnectionIdp.prototype = {
       return (a.digest === b.digest) && (a.algorithm === b.algorithm);
     };
     if (isSubsetOf(fingerprint, fingerprints, compareFingerprints)) {
-      error("fingerprints in SDP aren't a subset of those in the assertion");
+      error("the fingerprints in SDP covered by the assertion");
     }
     this._validateName(error, message.identity);
     return validation;
@@ -260,7 +267,8 @@ PeerConnectionIdp.prototype = {
   },
 
   /**
-   * Asks the IdP proxy for an identity assertion.
+   * Asks the IdP proxy for an identity assertion.  Don't call this unless you
+   * have checked .enabled, or you really like exceptions.
    */
   getIdentityAssertion: function(fingerprint) {
     if (!this.enabled) {
@@ -275,14 +283,16 @@ PeerConnectionIdp.prototype = {
       }]
     };
     let origin = Cu.getWebIDLCallerPrincipal().origin;
+
     let assertionPromise = this._idp.start()
-      .then(idp => idp.generateAssertion(content, origin, this.username))
+      .then(idp => idp.generateAssertion(this._idp.wrap(content),
+                                         origin, this.username))
       .then(assertion => {
         if (!this._isValidAssertion(assertion)) {
           this._warning("RTC identity: assertion generation failure", null, 0);
           this.assertion = null;
         } else {
-          // save the base64 + JSON assertion contents
+          // save the base64+JSON assertion, since that is all that is used
           this.assertion = btoa(JSON.stringify(assertion));
         }
         return this.assertion;
@@ -293,9 +303,9 @@ PeerConnectionIdp.prototype = {
 
   /**
    * Wraps a promise, adding a timeout guard on it so that it can't take longer
-   * than the specified timeout.  This relies on the fact that p does not
-   * resolve to an undefined value, since Promises don't expose any properties
-   * that let us learn about their state.
+   * than the specified time.  This relies on the fact that p does not resolve
+   * to an undefined value, since Promises don't expose any properties that let
+   * us learn about their state.
    */
   _safetyNet: function(type, p) {
     return Promise.race([p, delay(this._timeout)])

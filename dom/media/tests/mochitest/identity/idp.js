@@ -1,117 +1,80 @@
 (function(global) {
   "use strict";
 
-  function IDPJS() {
-    this.domain = global.location.host;
-    var p = global.location.pathname;
-    this.protocol = p.substring(p.lastIndexOf('/') + 1) + global.location.hash;
-    this.username = "someone@" + this.domain;
-    // so rather than create a million different IdP configurations and litter
-    // the world with files all containing near-identical code, let's use the
-    // hash/URL fragment as a way of generating instructions for the IdP
-    this.instructions = global.location.hash.replace("#", "").split(":");
-    dump("**************init\n");
-
-    this.port = global.webrtcIdentityPort || global.rtcwebIdentityPort;
-    this.port.onmessage = this.receiveMessage.bind(this);
-    this.sendResponse({
-      type : "READY"
-    });
-  }
-
-  IDPJS.prototype.getDelay = function() {
-    // instructions in the form "delay123" have that many milliseconds
-    // added before sending the response
-    var delay = 0;
-    function addDelay(instruction) {
-      var m = instruction.match(/^delay(\d+)$/);
-      if (m) {
-        delay += parseInt(m[1], 10);
-      }
-    }
-    this.instructions.forEach(addDelay);
-    return delay;
-  };
-
+  // rather than create a million different IdP configurations and litter the
+  // world with files all containing near-identical code, let's use the hash/URL
+  // fragment as a way of generating instructions for the IdP
+  var instructions = global.location.hash.replace("#", "").split(":");
   function is(target) {
     return function(instruction) {
       return instruction === target;
     };
   }
 
-  IDPJS.prototype.sendResponse = function(response) {
-    // we don't touch the READY message unless told to
-    if (response.type === "READY" && !this.instructions.some(is("ready"))) {
-      this.port.postMessage(response);
-      return;
-    }
+  function IDPJS() {
+    this.domain = global.location.host;
+    var p = global.location.pathname;
+    this.protocol = p.substring(p.lastIndexOf('/') + 1) + global.location.hash;
+    this.username = "someone@" + this.domain;
+  }
 
-    // if any instruction is "error", return an error.
-    if (this.instructions.some(is("error"))) {
-      response.type = "ERROR";
+  function borkResult(result) {
+    if (instructions.some(is("throw"))) {
+      throw new Error('Throwing!');
     }
-
-    global.setTimeout(function() {
-      dump(this.protocol + '> ' + JSON.stringify(response) + '\n');
-      this.port.postMessage(response);
-    }.bind(this), this.getDelay());
+    if (instructions.some(is("fail"))) {
+      return Promise.reject(new Error('Failing!'));
+    }
+    if (instructions.some(is("hang"))) {
+      return new Promise(r => {});
+    }
+    return Promise.resolve(result);
   };
 
-  IDPJS.prototype.receiveMessage = function(ev) {
-    var message = ev.data;
-    dump(this.protocol + '< ' + JSON.stringify(message) + '\n');
-    switch (message.type) {
-    case "SIGN":
-      if (message.username) {
-        var at = message.username.indexOf("@");
+  IDPJS.prototype = {
+    _selectUsername: function(usernameHint) {
+      var username = this.username;
+      if (usernameHint) {
+        var at = usernameHint.indexOf("@");
         if (at < 0) {
-          this.username = message.username + "@" + this.domain;
-        } else if (message.username.substring(at + 1) === this.domain) {
-          this.username = message.username;
+          username = usernameHint + "@" + this.domain;
+        } else if (usernameHint.substring(at + 1) === this.domain) {
+          username = usernameHint;
         }
       }
-      this.sendResponse({
-        type : "SUCCESS",
-        id : message.id,
-        message : {
-          idp : {
-            domain : this.domain,
-            protocol : this.protocol
-          },
-          assertion : JSON.stringify({
-            username : this.username,
-            contents : message.message
-          })
-        }
-      });
-      break;
+      return username;
+    },
 
-    case "VERIFY":
-      var payload = JSON.parse(message.message);
-      var contents = payload.contents;
-      if (this.instructions.some(is("bad"))) {
-dump("is bad\n");
-        contents = {};
+    generateAssertion: function(payload, origin, usernameHint) {
+      var idpDetails = {
+        domain: this.domain,
+        protocol: this.protocol
+      };
+      if (instructions.some(is("bad-assert"))) {
+        idpDetails = {};
       }
-      this.sendResponse({
-        type : "SUCCESS",
-        id : message.id,
-        message : {
-          identity : payload.username,
-          contents : contents
-        }
+      return borkResult({
+        idp: idpDetails,
+        assertion: JSON.stringify({
+          username: this._selectUsername(usernameHint),
+          contents: payload
+        })
       });
-      break;
+    },
 
-    default:
-      this.sendResponse({
-        type : "ERROR",
-        id : message.id,
-        error : JSON.stringify(message)
-      });
-      break;
+    validateAssertion: function(assertion, origin) {
+      var assertion = JSON.parse(assertion);
+      if (instructions.some(is("bad-validate"))) {
+        assertion.contents = {};
+      }
+      return borkResult({
+          identity: assertion.username,
+          contents: assertion.contents
+        });
     }
   };
 
-  global.idp = new IDPJS();
+  if (!instructions.some(is("dont_register"))) {
+    global.registerIdentityProvider(new IDPJS());
+  }
 }(this));
