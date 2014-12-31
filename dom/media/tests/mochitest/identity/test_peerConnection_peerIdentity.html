@@ -32,21 +32,16 @@ function theTest() {
   });
   test.setMediaConstraints([{
     audio: true,
-    peerIdentity: id2
-  }, {
     video: true,
     peerIdentity: id2
   }], [{
     audio: true,
-    fake: true,
-    peerIdentity: id1
-  }, {
     video: true,
     fake: true,
     peerIdentity: id1
   }]);
-  test.setIdentityProvider(test.pcLocal, 'test1.example.com', 'idp.html');
-  test.setIdentityProvider(test.pcRemote, 'test2.example.com', 'idp.html');
+  test.setIdentityProvider(test.pcLocal, 'test1.example.com', 'idp.js');
+  test.setIdentityProvider(test.pcRemote, 'test2.example.com', 'idp.js');
   test.chain.append([
   [
     "PEER_IDENTITY_IS_SET_CORRECTLY",
