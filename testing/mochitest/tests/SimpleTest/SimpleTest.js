@@ -240,6 +240,7 @@ SimpleTest._stopOnLoad = true;
 SimpleTest._cleanupFunctions = [];
 SimpleTest.expected = 'pass';
 SimpleTest.num_failed = 0;
+SimpleTest._finishedCalled = 0;
 
 SimpleTest.setExpected = function () {
   if (parent.TestRunner) {
@@ -628,7 +629,7 @@ window.setTimeout = function SimpleTest_setTimeoutShim() {
     case "webapprtContent":
         break;
     default:
-        if (!SimpleTest._alreadyFinished && arguments.length > 1 && arguments[1] > 0) {
+        if (SimpleTest._finishedCalled === 0 && arguments.length > 1 && arguments[1] > 0) {
             if (SimpleTest._flakyTimeoutIsOK) {
                 SimpleTest.todo(false, "The author of the test has indicated that flaky timeouts are expected.  Reason: " + SimpleTest._flakyTimeoutReason);
             } else {
@@ -959,7 +960,12 @@ SimpleTest.registerCleanupFunction = function(aFunc) {
  * SimpleTest.waitForExplicitFinish() has been invoked.
 **/
 SimpleTest.finish = function() {
-    if (SimpleTest._alreadyFinished) {
+    ++SimpleTest._finishedCalled;
+    if (SimpleTest._finishedCalled > 5) {
+        // We've already failed several times, suppress subsequent attempts
+        return;
+    }
+    if (SimpleTest._finishedCalled > 1) {
         var err = "[SimpleTest.finish()] this test already called finish!";
         if (parentRunner) {
             parentRunner.structuredLogger.error(err);
@@ -979,8 +985,6 @@ SimpleTest.finish = function() {
     }
 
     SimpleTest.testsLength = SimpleTest._tests.length;
-
-    SimpleTest._alreadyFinished = true;
 
     var afterCleanup = function() {
         if (SpecialPowers.DOMWindowUtils.isTestControllingRefreshes) {
@@ -1234,6 +1238,7 @@ SimpleTest.reset = function () {
     SimpleTest._ignoringAllUncaughtExceptions = false;
     SimpleTest._expectingUncaughtException = false;
     SimpleTest._bufferedMessages = [];
+    SimpleTest._finishedCalled = 0;
 };
 
 if (isPrimaryTestWindow) {
@@ -1470,8 +1475,9 @@ window.onerror = function simpletestOnerror(errorMsg, url, lineNumber) {
     var error = errorMsg + " at " + url + ":" + lineNumber;
     if (!SimpleTest._ignoringAllUncaughtExceptions) {
         // Don't log if SimpleTest.finish() is already called, it would cause failures
-        if (!SimpleTest._alreadyFinished)
-          SimpleTest.ok(isExpected, message, error);
+        if (SimpleTest._finishedCalled > 0) {
+            SimpleTest.ok(isExpected, message, error);
+        }
         SimpleTest._expectingUncaughtException = false;
     } else {
         SimpleTest.todo(false, message + ": " + error);
