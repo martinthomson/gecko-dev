@@ -23,21 +23,21 @@ function starttest() {
     function() {
       //test log
       info("Logging some info")
-    
+
       //basic usage
       ok(true, "test ok", "This should be true");
       is(0, 0, "is() test failed");
       isnot(0, 1, "isnot() test failed");
-    
+
       //todo tests
       todo(false, "test todo", "todo() test should not pass");
       todo_is(false, true, "test todo_is");
       todo_isnot(true, true, "test todo_isnot");
-    
+
       //misc
       is(typeof(SimpleTest.testPluginIsOOP()), "boolean", 'testPluginIsOOP should be bool');
       SimpleTest.requestLongerTimeout(1);
-    
+
       //note: this test may alter runtimes as it waits
       var check = false;
       $('textB').focus();
@@ -53,7 +53,7 @@ function starttest() {
         }
       );
       is(check, true, "waitForClipboard should work");
-    
+
       //use helper functions
       var div1 = createEl('div', {'id': 'somediv', 'display': 'block'}, "I am a div");
       document.body.appendChild(div1);
@@ -62,26 +62,34 @@ function starttest() {
       is($('somediv'), divObj, '$ helper did not get element as expected');
       is(computedStyle(divObj, 'display'), 'block', 'computedStyle did not get right display value');
       document.body.removeChild(div1);
-    
+
       /* note: expectChildProcessCrash is not being tested here, as it causes wildly variable
-       * run times. It is currently being tested in: 
+       * run times. It is currently being tested in:
        *  dom/plugins/test/test_hanging.html and dom/plugins/test/test_crashing.html
        */
 
-      //note: this also adds a short wait period
-      SimpleTest.executeSoon(
-        function () {
-          //finish() calls a slew of SimpleTest functions
-          SimpleTest.finish();
-          //call this after finish so we can make sure it works and doesn't hang our process
-          var endTime = new Date();
-          info("Profile::SimpleTestRunTime: " + (endTime-startTime));
-          //expect and throw exception here. Otherwise, any code that follows the throw call will never be executed
-          SimpleTest.expectUncaughtException();
-          //make sure we catch this error
-          throw "i am an uncaught exception"
-        }
-      );
+      function throwUncaughtException() {
+        // Using executeSoon ensures that the exception throw happens before
+        // finishTest runs.  The uncaught exception needs to be logged before
+        // calling SimpleTest.finish() or the test runner will fail the test.
+        SimpleTest.executeSoon(finishTest);
+
+        SimpleTest.expectUncaughtException();
+        throw "i am an uncaught exception"
+      }
+
+      function finishTest() {
+        //call this after finish so we can make sure it works and doesn't hang our process
+        var endTime = new Date();
+        // can't use info() once the test has "finished"
+        info("Profile::SimpleTestRunTime: " + (endTime-startTime) + "\n");
+
+        //finish() calls a slew of SimpleTest functions
+        SimpleTest.finish();
+      }
+
+      // An uncaught exception in an executeSoon block won't affect anything else.
+      SimpleTest.executeSoon(throwUncaughtException);
     }
   );
 };
