@@ -1185,6 +1185,7 @@ struct sslSocketStr {
     unsigned long    TCPconnected;       
     unsigned long    appDataBuffered;
     unsigned long    peerRequestedProtection; /* from old renegotiation */
+    unsigned long    fatalAlertSent;
 
     /* version of the protocol to use */
     SSL3ProtocolVersion version;

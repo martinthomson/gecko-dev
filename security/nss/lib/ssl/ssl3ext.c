@@ -1871,18 +1871,20 @@ ssl3_HandleHelloExtensions(sslSocket *ss, SSL3Opaque **b, PRUint32 *length)
         /* get the data for this extension, so we can pass it or skip it. */
         rv = ssl3_ConsumeHandshakeVariable(ss, &extension_data, 2, b, length);
         if (rv != SECSuccess)
-            return rv;
+            return rv; /* alert already sent */
 
         /* Check whether the server sent an extension which was not advertised
          * in the ClientHello.
          */
         if (!ss->sec.isServer &&
-            !ssl3_ClientExtensionAdvertised(ss, extension_type))
-            return SECFailure;  /* TODO: send unsupported_extension alert */
+            !ssl3_ClientExtensionAdvertised(ss, extension_type)) {
+            return SSL3_SendAlert(ss, alert_fatal, unsupported_extension);
+        }
 
         /* Check whether an extension has been sent multiple times. */
-        if (ssl3_ExtensionNegotiated(ss, extension_type))
-            return SECFailure;
+        if (ssl3_ExtensionNegotiated(ss, extension_type)) {
+            return SSL3_SendAlert(ss, alert_fatal, unsupported_extension);
+        }
 
         /* find extension_type in table of Hello Extension Handlers */
         for (handler = handlers; handler->ex_type >= 0; handler++) {
@@ -1891,7 +1893,8 @@ ssl3_HandleHelloExtensions(sslSocket *ss, SSL3Opaque **b, PRUint32 *length)
                 rv = (*handler->ex_handler)(ss, (PRUint16)extension_type,
                                                         &extension_data);
                 if (rv != SECSuccess) {
-                    return rv;
+                    /* send a generic alert if the handler didn't already */
+                    return SSL3_SendAlert(ss, alert_fatal, handshake_failure);
                 }
             }
         }

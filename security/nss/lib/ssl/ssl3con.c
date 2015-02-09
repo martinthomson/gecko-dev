@@ -2788,6 +2788,10 @@ ssl3_SendRecord(   sslSocket *        ss,
 
     PORT_Assert( ss->opt.noLocks || ssl_HaveXmitBufLock(ss) );
 
+    if (ss->fatalAlertSent) {
+        return SECFailure;
+    }
+
     capRecordVersion = ((flags & ssl_SEND_FLAG_CAP_RECORD_VERSION) != 0);
 
     if (capRecordVersion) {
@@ -3232,6 +3236,9 @@ SSL3_SendAlert(sslSocket *ss, SSL3AlertLevel level, SSL3AlertDescription desc)
 			       desc == no_certificate 
 			       ? ssl_SEND_FLAG_FORCE_INTO_BUFFER : 0);
 	rv = (sent >= 0) ? SECSuccess : (SECStatus)sent;
+    }
+    if (level == alert_fatal) {
+        ss->fatalAlertSent = PR_TRUE;
     }
     ssl_ReleaseXmitBufLock(ss);
     ssl_ReleaseSSL3HandshakeLock(ss);
