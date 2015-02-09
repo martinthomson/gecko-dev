@@ -2472,40 +2472,31 @@ ssl3_ServerHandleDraftVersionXtn(sslSocket * ss, PRUint16 ex_type,
         return SECSuccess;
     }
 
-    if (data->len != 2)
-        goto loser;
+    if (data->len != 2) {
+        return SECFailure;
+    }
 
     /* Get the draft version out of the handshake */
     draft_version = ssl3_ConsumeHandshakeNumber(ss, 2,
                                                 &data->data, &data->len);
     if (draft_version < 0) {
-        goto loser;
+        return SECFailure;
     }
 
     /*  Keep track of negotiated extensions. */
     ss->xtnData.negotiated[ss->xtnData.numNegotiated++] = ex_type;
 
-    /* Compare the version */
     if (draft_version != TLS_1_3_DRAFT_VERSION) {
+        /*
+         * Incompatible/broken TLS 1.3 implementation. Fall back to TLS 1.2.
+         * TODO(ekr@rtfm.com): It's not entirely clear it's safe to roll back
+         * here. Need to double-check.
+         */
         SSL_TRC(30, ("%d: SSL3[%d]: Incompatible version of TLS 1.3 (%d), "
                      "expected %d",
                      SSL_GETPID(), ss->fd, draft_version, TLS_1_3_DRAFT_VERSION));
-        goto loser;
+        ss->version = SSL_LIBRARY_VERSION_TLS_1_2;
     }
-
-    return SECSuccess;
-
-loser:
-    /*
-     * Incompatible/broken TLS 1.3 implementation. Fall back to TLS 1.2.
-     * TODO(ekr@rtfm.com): It's not entirely clear it's safe to roll back
-     * here. Need to double-check.
-     * TODO(ekr@rtfm.com): Currently we fall back even on broken extensions.
-     * because SECFailure does not cause handshake failures. See bug
-     * 753136.
-     */
-    SSL_TRC(30, ("%d: SSL3[%d]: Rolling back to TLS 1.2", SSL_GETPID(), ss->fd));
-    ss->version = SSL_LIBRARY_VERSION_TLS_1_2;
 
     return SECSuccess;
 }
