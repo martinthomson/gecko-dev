@@ -37,7 +37,10 @@ class TlsAgent : public PollTarget {
         adapter_(nullptr),
         ssl_fd_(nullptr),
         role_(role),
-        state_(INIT) {
+        state_(INIT),
+        expected_version_(0),
+        expected_cipher_suite_(0),
+        handshake_callback_called_(false) {
       memset(&info_, 0, sizeof(info_));
       memset(&csinfo_, 0, sizeof(csinfo_));
   }
@@ -71,7 +74,6 @@ class TlsAgent : public PollTarget {
 
   void StartConnect();
   void CheckKEAType(SSLKEAType type) const;
-  void CheckVersion(uint16_t version) const;
 
   void Handshake();
   void EnableSomeECDHECiphers();
@@ -81,11 +83,13 @@ class TlsAgent : public PollTarget {
   void SetSessionTicketsEnabled(bool en);
   void SetSessionCacheEnabled(bool en);
   void SetVersionRange(uint16_t minver, uint16_t maxver);
+  void CheckPreliminaryInfo();
+  void SetExpectedVersion(uint16_t version);
   void EnableAlpn(const uint8_t* val, size_t len);
   void CheckAlpn(SSLNextProtoState expected_state,
-                 const std::string& expected);
+                 const std::string& expected) const;
   void EnableSrtp();
-  void CheckSrtp();
+  void CheckSrtp() const;
 
   State state() const { return state_; }
 
@@ -94,14 +98,6 @@ class TlsAgent : public PollTarget {
   const char* state_str(State state) const { return states[state]; }
 
   PRFileDesc* ssl_fd() { return ssl_fd_; }
-
-  bool version(uint16_t* version) const {
-    if (state_ != CONNECTED) return false;
-
-    *version = info_.protocolVersion;
-
-    return true;
-  }
 
   bool cipher_suite(int16_t* cipher_suite) const {
     if (state_ != CONNECTED) return false;
@@ -135,6 +131,7 @@ class TlsAgent : public PollTarget {
   // Dummy auth certificate hook.
   static SECStatus AuthCertificateHook(void* arg, PRFileDesc* fd,
                                        PRBool checksig, PRBool isServer) {
+    reinterpret_cast<TlsAgent*>(arg)->CheckPreliminaryInfo();
     return SECSuccess;
   }
 
@@ -151,8 +148,24 @@ class TlsAgent : public PollTarget {
   static PRInt32 SniHook(PRFileDesc *fd, const SECItem *srvNameArr,
                          PRUint32 srvNameArrSize,
                          void *arg) {
+    reinterpret_cast<TlsAgent*>(arg)->CheckPreliminaryInfo();
     return SSL_SNI_CURRENT_CONFIG_IS_USED;
   }
+
+  static SECStatus CanFalseStartCallback(PRFileDesc *fd, void *arg,
+                                          PRBool *canFalseStart) {
+    reinterpret_cast<TlsAgent*>(arg)->CheckPreliminaryInfo();
+    *canFalseStart = true;
+    return SECSuccess;
+  }
+
+  static void HandshakeCallback(PRFileDesc *fd, void *arg) {
+    TlsAgent* agent = reinterpret_cast<TlsAgent*>(arg);
+    agent->CheckPreliminaryInfo();
+    agent->handshake_callback_called_ = true;
+  }
+
+  void Connected();
 
   const std::string name_;
   Mode mode_;
@@ -161,6 +174,9 @@ class TlsAgent : public PollTarget {
   PRFileDesc* ssl_fd_;
   Role role_;
   State state_;
+  uint16_t expected_version_;
+  uint16_t expected_cipher_suite_;
+  bool handshake_callback_called_;
   SSLChannelInfo info_;
   SSLCipherSuiteInfo csinfo_;
 };

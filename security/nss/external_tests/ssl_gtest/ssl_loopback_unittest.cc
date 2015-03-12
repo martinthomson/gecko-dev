@@ -43,14 +43,9 @@ class TlsServerKeyExchangeECDHE {
 TEST_P(TlsConnectGeneric, SetupOnly) {}
 
 TEST_P(TlsConnectGeneric, Connect) {
+  // Check that we negotiated the default version.
+  SetExpectedVersion(SSL_LIBRARY_VERSION_TLS_1_2);
   Connect();
-
-  // Check that we negotiated the expected version.
-  if (mode_ == STREAM) {
-    client_->CheckVersion(SSL_LIBRARY_VERSION_TLS_1_0);
-  } else {
-    client_->CheckVersion(SSL_LIBRARY_VERSION_TLS_1_1);
-  }
 }
 
 TEST_P(TlsConnectGeneric, ConnectResumed) {
@@ -154,6 +149,7 @@ TEST_P(TlsConnectGeneric, ConnectClientNoneServerBoth) {
 
 TEST_P(TlsConnectGeneric, ConnectTLS_1_1_Only) {
   EnsureTlsSetup();
+  SetExpectedVersion(SSL_LIBRARY_VERSION_TLS_1_1);
   client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
                            SSL_LIBRARY_VERSION_TLS_1_1);
 
@@ -161,18 +157,16 @@ TEST_P(TlsConnectGeneric, ConnectTLS_1_1_Only) {
                            SSL_LIBRARY_VERSION_TLS_1_1);
 
   Connect();
-
-  client_->CheckVersion(SSL_LIBRARY_VERSION_TLS_1_1);
 }
 
 TEST_P(TlsConnectGeneric, ConnectTLS_1_2_Only) {
   EnsureTlsSetup();
+  SetExpectedVersion(SSL_LIBRARY_VERSION_TLS_1_2);
   client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
                            SSL_LIBRARY_VERSION_TLS_1_2);
   server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_2,
                            SSL_LIBRARY_VERSION_TLS_1_2);
   Connect();
-  client_->CheckVersion(SSL_LIBRARY_VERSION_TLS_1_2);
 }
 
 TEST_P(TlsConnectGeneric, ConnectAlpn) {

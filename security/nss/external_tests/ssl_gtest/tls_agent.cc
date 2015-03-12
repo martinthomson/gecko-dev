@@ -56,11 +56,20 @@ bool TlsAgent::EnsureTlsSetup() {
     SECStatus rv = SSL_SetURL(ssl_fd_, "server");
     EXPECT_EQ(SECSuccess, rv);
     if (rv != SECSuccess) return false;
+
+    rv = SSL_SetCanFalseStartCallback(ssl_fd_, CanFalseStartCallback,
+                                      reinterpret_cast<void*>(this));
+    EXPECT_EQ(SECSuccess, rv);
+    if (rv != SECSuccess) return false;
   }
 
   SECStatus rv = SSL_AuthCertificateHook(ssl_fd_, AuthCertificateHook,
                                          reinterpret_cast<void*>(this));
   EXPECT_EQ(SECSuccess, rv);
+  if (rv != SECSuccess) return false;
+
+  rv = SSL_HandshakeCallback(ssl_fd_, HandshakeCallback,
+                             reinterpret_cast<void*>(this));                            EXPECT_EQ(SECSuccess, rv);
   if (rv != SECSuccess) return false;
 
   return true;
@@ -108,14 +117,14 @@ void TlsAgent::SetVersionRange(uint16_t minver, uint16_t maxver) {
   ASSERT_EQ(SECSuccess, SSL_VersionRangeSet(ssl_fd_, &range));
 }
 
+void TlsAgent::SetExpectedVersion(uint16_t version)
+{
+  expected_version_ = version;
+}
+
 void TlsAgent::CheckKEAType(SSLKEAType type) const {
   ASSERT_EQ(CONNECTED, state_);
   ASSERT_EQ(type, csinfo_.keaType);
-}
-
-void TlsAgent::CheckVersion(uint16_t version) const {
-  ASSERT_EQ(CONNECTED, state_);
-  ASSERT_EQ(version, info_.protocolVersion);
 }
 
 void TlsAgent::EnableAlpn(const uint8_t* val, size_t len) {
@@ -126,7 +135,7 @@ void TlsAgent::EnableAlpn(const uint8_t* val, size_t len) {
 }
 
 void TlsAgent::CheckAlpn(SSLNextProtoState expected_state,
-                         const std::string& expected) {
+                         const std::string& expected) const {
   SSLNextProtoState state;
   char chosen[10];
   unsigned int chosen_len;
@@ -148,24 +157,60 @@ void TlsAgent::EnableSrtp() {
 
 }
 
-void TlsAgent::CheckSrtp() {
+void TlsAgent::CheckSrtp() const {
   uint16_t actual;
   ASSERT_EQ(SECSuccess, SSL_GetSRTPCipher(ssl_fd_, &actual));
   ASSERT_EQ(SRTP_AES128_CM_HMAC_SHA1_80, actual);
 }
 
+void TlsAgent::CheckPreliminaryInfo() {
+  SSLPreliminaryChannelInfo info;
+  ASSERT_EQ(SECSuccess,
+            SSL_GetPreliminaryChannelInfo(ssl_fd_, &info, sizeof(info)));
+  ASSERT_TRUE((info.valuesSet & ssl_preinfo_version) != 0);
+  ASSERT_TRUE((info.valuesSet & ssl_preinfo_cipher_suite) != 0);
+
+  // A version of 0 is invalid and indicates no expectation.
+  if (expected_version_) {
+    ASSERT_EQ(expected_version_, info.protocolVersion);
+  } else {
+    expected_version_ = info.protocolVersion;
+  }
+  // As above; 0 is the null cipher suite.
+  if (expected_cipher_suite_) {
+    ASSERT_EQ(expected_cipher_suite_, info.cipherSuite);
+  } else {
+    expected_cipher_suite_ = info.cipherSuite;
+  }
+}
+
+void TlsAgent::Connected() {
+  LOG("Handshake success");
+  ASSERT_TRUE(handshake_callback_called_);
+
+  SECStatus rv = SSL_GetChannelInfo(ssl_fd_, &info_, sizeof(info_));
+  ASSERT_EQ(SECSuccess, rv);
+
+  // Preliminary values are exposed through callbacks during the handshake.
+  // If either expected values were set or the callbacks were called, check
+  // that the final values are correct.
+  if (expected_version_) {
+    ASSERT_EQ(expected_version_, info_.protocolVersion);
+  }
+  if (expected_cipher_suite_) {
+    ASSERT_EQ(expected_cipher_suite_, info_.cipherSuite);
+  }
+
+  rv = SSL_GetCipherSuiteInfo(info_.cipherSuite, &csinfo_, sizeof(csinfo_));
+  ASSERT_EQ(SECSuccess, rv);
+
+  SetState(CONNECTED);
+}
 
 void TlsAgent::Handshake() {
   SECStatus rv = SSL_ForceHandshake(ssl_fd_);
   if (rv == SECSuccess) {
-    LOG("Handshake success");
-    SECStatus rv = SSL_GetChannelInfo(ssl_fd_, &info_, sizeof(info_));
-    ASSERT_EQ(SECSuccess, rv);
-
-    rv = SSL_GetCipherSuiteInfo(info_.cipherSuite, &csinfo_, sizeof(csinfo_));
-    ASSERT_EQ(SECSuccess, rv);
-
-    SetState(CONNECTED);
+    Connected();
     return;
   }
 

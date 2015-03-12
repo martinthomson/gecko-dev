@@ -39,13 +39,14 @@ class TlsConnectTestBase : public ::testing::Test {
   // Connect and expect it to fail.
   void ConnectExpectFail();
 
+  void SetExpectedVersion(uint16_t version);
   void EnableSomeECDHECiphers();
   void ConfigureSessionCache(SessionResumptionMode client,
                              SessionResumptionMode server);
   void CheckResumption(SessionResumptionMode expected);
   void EnableAlpn();
   void EnableSrtp();
-  void CheckSrtp();
+  void CheckSrtp() const;
 
  protected:
   Mode mode_;
