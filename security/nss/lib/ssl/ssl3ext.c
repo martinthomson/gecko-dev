@@ -630,6 +630,7 @@ ssl3_SelectAppProtocol(sslSocket *ss, PRUint16 ex_type, SECItem *data)
         return rv;
 
     PORT_Assert(ss->nextProtoCallback);
+    PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_version);
     rv = ss->nextProtoCallback(ss->nextProtoArg, ss->fd, data->data, data->len,
                                result.data, &result.len, sizeof resultBuffer);
     if (rv != SECSuccess)

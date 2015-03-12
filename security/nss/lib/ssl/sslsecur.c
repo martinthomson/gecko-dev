@@ -132,6 +132,11 @@ ssl_FinishHandshake(sslSocket *ss)
 
     SSL_TRC(3, ("%d: SSL[%d]: handshake is completed", SSL_GETPID(), ss->fd));
 
+    PORT_Assert(ss->version < SSL_LIBRARY_VERSION_3_0 ||
+                ss->ssl3.hs.preliminaryInfo & ssl_preinfo_version);
+    PORT_Assert(ss->version < SSL_LIBRARY_VERSION_3_0 ||
+                ss->ssl3.hs.preliminaryInfo & ssl_preinfo_cipher_suite);
+
     ss->firstHsDone = PR_TRUE;
     ss->enoughFirstHsDone = PR_TRUE;
     ss->gs.writeOffset = 0;

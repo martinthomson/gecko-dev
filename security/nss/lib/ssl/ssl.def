@@ -171,3 +171,9 @@ SSL_SetCanFalseStartCallback;
 ;+    local:
 ;+*;
 ;+};
+;+NSS_3.19 {    # NSS 3.19 release
+;+    global:
+SSL_GetPreliminaryChannelInfo;
+;+    local:
+;+*;
+;+};

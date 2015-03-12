@@ -48,22 +48,22 @@ typedef enum {
 ** programs that use the kt_ symbols should convert to the ssl_kt_ symbols
 ** soon.
 */
-#define kt_null   	ssl_kea_null
-#define kt_rsa   	ssl_kea_rsa
-#define kt_dh   	ssl_kea_dh
+#define kt_null         ssl_kea_null
+#define kt_rsa          ssl_kea_rsa
+#define kt_dh           ssl_kea_dh
 #define kt_fortezza	ssl_kea_fortezza       /* deprecated, now unused */
-#define kt_ecdh   	ssl_kea_ecdh
+#define kt_ecdh         ssl_kea_ecdh
 #define kt_kea_size	ssl_kea_size
 
 typedef enum {
-    ssl_sign_null   = 0, 
+    ssl_sign_null   = 0,
     ssl_sign_rsa    = 1,
     ssl_sign_dsa    = 2,
     ssl_sign_ecdsa  = 3
 } SSLSignType;
 
 typedef enum {
-    ssl_auth_null   = 0, 
+    ssl_auth_null   = 0,
     ssl_auth_rsa    = 1,
     ssl_auth_dsa    = 2,
     ssl_auth_kea    = 3,
@@ -84,12 +84,12 @@ typedef enum {
     ssl_calg_aes_gcm  = 10
 } SSLCipherAlgorithm;
 
-typedef enum { 
-    ssl_mac_null      = 0, 
-    ssl_mac_md5       = 1, 
-    ssl_mac_sha       = 2, 
-    ssl_hmac_md5      = 3, 	/* TLS HMAC version of mac_md5 */
-    ssl_hmac_sha      = 4, 	/* TLS HMAC version of mac_sha */
+typedef enum {
+    ssl_mac_null      = 0,
+    ssl_mac_md5       = 1,
+    ssl_mac_sha       = 2,
+    ssl_hmac_md5      = 3,      /* TLS HMAC version of mac_md5 */
+    ssl_hmac_sha      = 4,      /* TLS HMAC version of mac_sha */
     ssl_hmac_sha256   = 5,
     ssl_mac_aead      = 6
 } SSLMACAlgorithm;
@@ -98,6 +98,7 @@ typedef enum {
     ssl_compression_null = 0,
     ssl_compression_deflate = 1  /* RFC 3749 */
 } SSLCompressionMethod;
+
 
 typedef struct SSLChannelInfoStr {
     PRUint32             length;
@@ -123,6 +124,21 @@ typedef struct SSLChannelInfoStr {
     const char *         compressionMethodName;
     SSLCompressionMethod compressionMethod;
 } SSLChannelInfo;
+
+/* Preliminary channel info is added in NSS 3.19 */
+#define ssl_preinfo_version      (1U << 0)
+#define ssl_preinfo_cipher_suite (1U << 1)
+
+typedef struct SSLPreliminaryChannelInfoStr {
+    PRUint32             length;
+    /* A bitfield over SSLPreliminaryValueSet that describes which
+     * preliminary values are set (see ssl_preinfo_*). */
+    PRUint32             valuesSet;
+    /* protocol version: test (valuesSet & ssl_preinfo_version) */
+    PRUint16             protocolVersion;
+    /* cipher suite: test (valuesSet & ssl_preinfo_cipher_suite) */
+    PRUint16             cipherSuite;
+} SSLPreliminaryChannelInfo;
 
 typedef struct SSLCipherSuiteInfoStr {
     PRUint16             length;

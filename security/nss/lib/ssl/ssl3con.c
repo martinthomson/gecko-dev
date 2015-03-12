@@ -909,6 +909,7 @@ ssl3_NegotiateVersion(sslSocket *ss, SSL3ProtocolVersion peerVersion,
     }
 
     ss->version = PR_MIN(peerVersion, ss->vrange.max);
+    ss->ssl3.hs.preliminaryInfo |= ssl_preinfo_version;
     PORT_Assert(ssl3_VersionIsSupported(ss->protocolVariant, ss->version));
 
     return SECSuccess;
@@ -4898,7 +4899,9 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     if (rv != SECSuccess) {
 	return rv;		/* ssl3_InitState has set the error code. */
     }
-    ss->ssl3.hs.sendingSCSV = PR_FALSE; /* Must be reset every handshake */
+    /* These MUST be reset every handshake */
+    ss->ssl3.hs.sendingSCSV = PR_FALSE;
+    PORT_Assert(ss->ssl3.hs.preliminaryInfo == 0);
     PORT_Assert(IS_DTLS(ss) || !resending);
 
     SECITEM_FreeItem(&ss->ssl3.hs.newSessionTicket.ticket, PR_FALSE);
@@ -5004,6 +5007,7 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
 		if (sid->version >= ss->vrange.min &&
 		    sid->version <= ss->clientHelloVersion) {
 		    ss->version = ss->clientHelloVersion;
+                    ss->ssl3.hs.preliminaryInfo |= ssl_preinfo_version;
 		} else {
 		    sidOK = PR_FALSE;
 		}
@@ -5403,6 +5407,7 @@ ssl3_HandleHelloRequest(sslSocket *ss)
     if (IS_DTLS(ss)) {
 	dtls_RehandshakeCleanup(ss);
     }
+    ss->ssl3.hs.preliminaryInfo = 0;
 
     ssl_GetXmitBufLock(ss);
     rv = ssl3_SendClientHello(ss, PR_FALSE);
@@ -6349,6 +6354,7 @@ ssl3_HandleServerHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     }
     ss->ssl3.hs.cipher_suite = (ssl3CipherSuite)temp;
     ss->ssl3.hs.suite_def    = ssl_LookupCipherSuiteDef((ssl3CipherSuite)temp);
+    ss->ssl3.hs.preliminaryInfo |= ssl_preinfo_cipher_suite;
     PORT_Assert(ss->ssl3.hs.suite_def);
     if (!ss->ssl3.hs.suite_def) {
     	PORT_SetError(errCode = SEC_ERROR_LIBRARY_FAILURE);
@@ -7079,6 +7085,8 @@ ssl3_HandleCertificateRequest(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     ss->ssl3.hs.ws = wait_hello_done;
 
     if (ss->getClientAuthData != NULL) {
+        PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_version);
+        PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_cipher_suite);
 	/* XXX Should pass cert_types and algorithms in this call!! */
 	rv = (SECStatus)(*ss->getClientAuthData)(ss->getClientAuthDataArg,
 						 ss->fd, &ca_list,
@@ -7183,6 +7191,8 @@ ssl3_CheckFalseStart(sslSocket *ss)
 	    SSL_TRC(3, ("%d: SSL[%d]: no false start due to weak cipher",
 			SSL_GETPID(), ss->fd));
 	} else {
+            PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_version);
+            PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_cipher_suite);
 	    rv = (ss->canFalseStartCallback)(ss->fd,
 					     ss->canFalseStartCallbackData,
 					     &ss->ssl3.hs.canFalseStart);
@@ -7638,6 +7648,7 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     PORT_Assert( ss->opt.noLocks || ssl_HaveRecvBufLock(ss) );
     PORT_Assert( ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
     PORT_Assert( ss->ssl3.initialized );
+    PORT_Assert(ss->ssl3.hs.preliminaryInfo == 0);
 
     /* Get peer name of client */
     rv = ssl_GetPeerInfo(ss);
@@ -7962,6 +7973,7 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 		ss->ssl3.hs.cipher_suite = suite->cipher_suite;
 		ss->ssl3.hs.suite_def =
 		    ssl_LookupCipherSuiteDef(ss->ssl3.hs.cipher_suite);
+                ss->ssl3.hs.preliminaryInfo |= ssl_preinfo_cipher_suite;
 
 		/* Use the cached compression method. */
 		ss->ssl3.hs.compression = sid->u.ssl3.compression;
@@ -8007,6 +8019,7 @@ ssl3_HandleClientHello(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 		ss->ssl3.hs.cipher_suite = suite->cipher_suite;
 		ss->ssl3.hs.suite_def =
 		    ssl_LookupCipherSuiteDef(ss->ssl3.hs.cipher_suite);
+                ss->ssl3.hs.preliminaryInfo |= ssl_preinfo_cipher_suite;
 		goto suite_found;
 	    }
 	}
@@ -8235,6 +8248,9 @@ compression_found:
     if (ssl3_ExtensionNegotiated(ss, ssl_server_name_xtn)) {
         int ret = 0;
         if (ss->sniSocketConfig) do { /* not a loop */
+            PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_version);
+            PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_cipher_suite);
+
             ret = SSL_SNI_SEND_ALERT;
             /* If extension is negotiated, the len of names should > 0. */
             if (ss->xtnData.sniNameArrSize) {
@@ -8541,6 +8557,7 @@ ssl3_HandleV2ClientHello(sslSocket *ss, unsigned char *buffer, int length)
 		ss->ssl3.hs.cipher_suite = suite->cipher_suite;
 		ss->ssl3.hs.suite_def =
 		    ssl_LookupCipherSuiteDef(ss->ssl3.hs.cipher_suite);
+                ss->ssl3.hs.preliminaryInfo |= ssl_preinfo_cipher_suite;
 		goto suite_found;
 	    }
 	}
@@ -9997,6 +10014,8 @@ ssl3_AuthCertificate(sslSocket *ss)
 
     ss->ssl3.hs.authCertificatePending = PR_FALSE;
 
+    PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_version);
+    PORT_Assert(ss->ssl3.hs.preliminaryInfo & ssl_preinfo_cipher_suite);
     /*
      * Ask caller-supplied callback function to validate cert chain.
      */
@@ -11787,6 +11806,7 @@ ssl3_InitState(sslSocket *ss)
     ss->ssl3.hs.sendingSCSV = PR_FALSE;
     ssl3_InitCipherSpec(ss, ss->ssl3.crSpec);
     ssl3_InitCipherSpec(ss, ss->ssl3.prSpec);
+    ss->ssl3.hs.preliminaryInfo = 0;
 
     ss->ssl3.hs.ws = (ss->sec.isServer) ? wait_client_hello : wait_server_hello;
 #ifndef NSS_DISABLE_ECC
@@ -12077,6 +12097,7 @@ ssl3_RedoHandshake(sslSocket *ss, PRBool flushCache)
 	ssl_FreeSID(sid);	/* dec ref count and free if zero. */
 	ss->sec.ci.sid = NULL;
     }
+    ss->ssl3.hs.preliminaryInfo = 0;
 
     ssl_GetXmitBufLock(ss);	/**************************************/
 

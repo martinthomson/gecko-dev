@@ -856,6 +856,7 @@ typedef struct SSL3HandshakeStateStr {
     PK11Context *         md5;
     PK11Context *         sha;
 
+
 const ssl3KEADef *        kea_def;
     ssl3CipherSuite       cipher_suite;
 const ssl3CipherSuiteDef *suite_def;
@@ -900,6 +901,8 @@ const ssl3CipherSuiteDef *suite_def;
     PRBool                cacheSID;
 
     PRBool                canFalseStart;   /* Can/did we False Start */
+    /* Which preliminaryinfo values have been set. */
+    PRUint32              preliminaryInfo;
 
     /* clientSigAndHash contains the contents of the signature_algorithms
      * extension (if any) from the client. This is only valid for TLS 1.2

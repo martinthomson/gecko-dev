@@ -895,10 +895,23 @@ SSL_IMPORT SECStatus NSS_SetFrancePolicy(void);
 SSL_IMPORT SSL3Statistics * SSL_GetStatistics(void);
 
 /* Report more information than SSL_SecurityStatus.
-** Caller supplies the info struct.  Function fills it in.
-*/
+ * Caller supplies the info struct.  Function fills it in.
+ * The information here will be zeroed prior to details being confirmed.
+ * Details are usually confirmed when the Finished message is sent, however
+ * false start allows for earlier confirmation, if enabled.
+ */
 SSL_IMPORT SECStatus SSL_GetChannelInfo(PRFileDesc *fd, SSLChannelInfo *info,
                                         PRUintn len);
+/* Get preliminary information about a channel.
+ * This function can be called from various callbacks (such as the
+ * SSLAuthCertificate or SSLGetClientAuthData hooks) during the handshake
+ * to get information about the channel prior to it being confirmed.
+ * Note that values are marked as being unset when renegotiation is initiated.
+ * If the channel is already established, use SSL_GetChannelInfo instead. */
+SSL_IMPORT SECStatus
+SSL_GetPreliminaryChannelInfo(PRFileDesc *fd,
+                              SSLPreliminaryChannelInfo *info,
+                              PRUintn len);
 SSL_IMPORT SECStatus SSL_GetCipherSuiteInfo(PRUint16 cipherSuite, 
                                         SSLCipherSuiteInfo *info, PRUintn len);
 
