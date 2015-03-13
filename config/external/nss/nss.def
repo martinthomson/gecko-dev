@@ -648,6 +648,7 @@ SSL_GetClientAuthDataHook
 SSL_GetImplementedCiphers
 SSL_GetNextProto
 SSL_GetNumImplementedCiphers
+SSL_GetPreliminaryChannelInfo
 SSL_GetSRTPCipher
 SSL_HandshakeCallback
 SSL_HandshakeNegotiatedExtension
