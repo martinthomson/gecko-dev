@@ -13,6 +13,7 @@
 
 #include <math.h>
 
+#include "mozilla/UniquePtr.h"
 #include "nspr.h"
 #include "srtp.h"
 
@@ -424,6 +425,15 @@ void MediaPipeline::increment_rtcp_packets_received() {
   }
 }
 
+// This makes a copy of a (const) buffer for passing to SrtpFlow, which modifies
+// buffers in place.  The expand argument can be used to ensures that when
+// libstrp writes into the same buffer with the answer, it has enough room.
+static UniquePtr<uint8_t[]> CopyBuffer(const unsigned char* data, size_t len) {
+  auto copy = MakeUnique<uint8_t[]>(len);
+  memcpy(copy.get(), data, len);
+  return Move(copy);
+}
+
 void MediaPipeline::RtpPacketReceived(TransportLayer *layer,
                                       const unsigned char *data,
                                       size_t len) {
@@ -471,21 +481,15 @@ void MediaPipeline::RtpPacketReceived(TransportLayer *layer,
     }
   }
 
-  // Make a copy rather than cast away constness
-  ScopedDeletePtr<unsigned char> inner_data(
-      new unsigned char[len]);
-  memcpy(inner_data, data, len);
+  UniquePtr<uint8_t[]> inner_data = CopyBuffer(data, len);
   int out_len = 0;
-  nsresult res = rtp_.recv_srtp_->UnprotectRtp(inner_data,
+  nsresult res = rtp_.recv_srtp_->UnprotectRtp(inner_data.get(),
                                                len, len, &out_len);
   if (!NS_SUCCEEDED(res)) {
     char tmp[16];
 
     PR_snprintf(tmp, sizeof(tmp), "%.2x %.2x %.2x %.2x",
-                inner_data[0],
-                inner_data[1],
-                inner_data[2],
-                inner_data[3]);
+                data[0], data[1], data[2], data[3]);
 
     MOZ_MTLOG(ML_NOTICE, "Error unprotecting RTP in " << description_
               << "len= " << len << "[" << tmp << "...]");
@@ -495,7 +499,7 @@ void MediaPipeline::RtpPacketReceived(TransportLayer *layer,
   MOZ_MTLOG(ML_DEBUG, description_ << " received RTP packet.");
   increment_rtp_packets_received(out_len);
 
-  (void)conduit_->ReceivedRTPPacket(inner_data, out_len);  // Ignore error codes
+  (void)conduit_->ReceivedRTPPacket(inner_data.get(), out_len);  // Ignore error codes
 }
 
 void MediaPipeline::RtcpPacketReceived(TransportLayer *layer,
@@ -530,13 +534,10 @@ void MediaPipeline::RtcpPacketReceived(TransportLayer *layer,
     return;
   }
 
-  // Make a copy rather than cast away constness
-  ScopedDeletePtr<unsigned char> inner_data(
-      new unsigned char[len]);
-  memcpy(inner_data, data, len);
+  UniquePtr<uint8_t[]> inner_data = CopyBuffer(data, len);
   int out_len;
 
-  nsresult res = rtcp_.recv_srtp_->UnprotectRtcp(inner_data,
+  nsresult res = rtcp_.recv_srtp_->UnprotectRtcp(inner_data.get(),
                                                  len,
                                                  len,
                                                  &out_len);
@@ -547,7 +548,7 @@ void MediaPipeline::RtcpPacketReceived(TransportLayer *layer,
   // We do not filter RTCP for send pipelines, since the webrtc.org code for
   // senders already has logic to ignore RRs that do not apply.
   if (filter_ && direction_ == RECEIVE) {
-    if (!filter_->FilterSenderReport(inner_data, out_len)) {
+    if (!filter_->FilterSenderReport(inner_data.get(), out_len)) {
       MOZ_MTLOG(ML_NOTICE, "Dropping rtcp packet");
       return;
     }
@@ -558,7 +559,7 @@ void MediaPipeline::RtcpPacketReceived(TransportLayer *layer,
 
   MOZ_ASSERT(rtcp_.recv_srtp_);  // This should never happen
 
-  (void)conduit_->ReceivedRTCPPacket(inner_data, out_len);  // Ignore error codes
+  (void)conduit_->ReceivedRTCPPacket(inner_data.get(), out_len);  // Ignore error codes
 }
 
 bool MediaPipeline::IsRtp(const unsigned char *data, size_t len) {
