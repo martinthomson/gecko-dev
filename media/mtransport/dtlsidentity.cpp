@@ -53,10 +53,16 @@ TemporaryRef<DtlsIdentity> DtlsIdentity::Generate() {
     return nullptr;
   }
 
-  PK11RSAGenParams rsaparams;
-  rsaparams.keySizeInBits = 1024; // TODO: make this stronger when we
-                                  // pre-generate.
-  rsaparams.pe = 65537; // We are too paranoid to use 3 as the exponent.
+  unsigned char paramBuf[12]; // OIDs are small
+  SECItem ecdsaParams = { siBuffer, paramBuf, sizeof(paramBuf) };
+  SECOidData* oidData = SECOID_FindOIDByTag(SEC_OID_SECG_EC_SECP256R1);
+  if (!oidData || oidData->oid.len > sizeof(paramBuf) - 2) {
+    return nullptr;
+  }
+  ecdsaParams.data[0] = SEC_ASN1_OBJECT_ID;
+  ecdsaParams.data[1] = oidData->oid.len;
+  memcpy(ecdsaParams.data + 2, oidData->oid.data, oidData->oid.len);
+  ecdsaParams.len = oidData->oid.len + 2;
 
   ScopedSECKEYPrivateKey private_key;
   ScopedSECKEYPublicKey public_key;
@@ -64,7 +70,7 @@ TemporaryRef<DtlsIdentity> DtlsIdentity::Generate() {
 
   private_key =
       PK11_GenerateKeyPair(slot,
-                           CKM_RSA_PKCS_KEY_PAIR_GEN, &rsaparams, &pubkey,
+                           CKM_EC_KEY_PAIR_GEN, &ecdsaParams, &pubkey,
                            PR_FALSE, PR_TRUE, nullptr);
   if (private_key == nullptr)
     return nullptr;
@@ -120,7 +126,7 @@ TemporaryRef<DtlsIdentity> DtlsIdentity::Generate() {
   PLArenaPool *arena = certificate->arena;
 
   rv = SECOID_SetAlgorithmID(arena, &certificate->signature,
-                             SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION, 0);
+                             SEC_OID_ANSIX962_ECDSA_SHA256_SIGNATURE, 0);
   if (rv != SECSuccess)
     return nullptr;
 
@@ -144,7 +150,7 @@ TemporaryRef<DtlsIdentity> DtlsIdentity::Generate() {
 
   rv = SEC_DerSignData(arena, signedCert, innerDER.data, innerDER.len,
                        private_key,
-                       SEC_OID_PKCS1_SHA1_WITH_RSA_ENCRYPTION);
+                       SEC_OID_ANSIX962_ECDSA_SHA256_SIGNATURE);
   if (rv != SECSuccess) {
     return nullptr;
   }

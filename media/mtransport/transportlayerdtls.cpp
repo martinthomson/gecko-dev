@@ -497,7 +497,7 @@ bool TransportLayerDtls::Setup() {
     // Server side
     rv = SSL_ConfigSecureServer(ssl_fd, identity_->cert(),
                                 identity_->privkey(),
-                                kt_rsa);
+                                ssl_kea_ecdh);
     if (rv != SECSuccess) {
       MOZ_MTLOG(ML_ERROR, "Couldn't set identity");
       return false;
@@ -649,7 +649,12 @@ bool TransportLayerDtls::SetupAlpn(PRFileDesc* ssl_fd) const {
 // builds, but can be disabled with prefs and they aren't on in our unit tests
 // since that uses NSS default configuration.
 // Only override prefs to comply with MUST statements in the security-arch.
+// * Note that we enable the RSA suites in addition to the ECDSA suites to
+// avoid backward compatibility problems.  This should allow older server
+// implementations the option of providing an RSA certificate.
 static const uint32_t EnabledCiphers[] = {
+  TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+  TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
   TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
   TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
 };
