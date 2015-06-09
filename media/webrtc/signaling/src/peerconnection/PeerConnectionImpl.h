@@ -38,7 +38,6 @@
 #include "mozilla/net/DataChannel.h"
 #include "VideoUtils.h"
 #include "VideoSegment.h"
-#include "nsNSSShutDown.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
 #include "nsIPrincipal.h"
 #include "mozilla/PeerIdentity.h"
@@ -78,6 +77,7 @@ class DOMMediaStream;
 #endif
 
 namespace dom {
+class RTCCertificate;
 struct RTCConfiguration;
 struct RTCIceServer;
 struct RTCOfferOptions;
@@ -231,7 +231,6 @@ class RTCStatsQuery {
 class PeerConnectionImpl final : public nsISupports,
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
                                  public mozilla::DataChannelConnection::DataConnectionListener,
-                                 public nsNSSShutDownObject,
                                  public DOMMediaStream::PrincipalChangeObserver,
 #endif
                                  public sigslot::has_slots<>
@@ -321,9 +320,6 @@ public:
     return mSTSThread;
   }
 
-  // Get the DTLS identity (local side)
-  mozilla::RefPtr<DtlsIdentity> const GetIdentity() const;
-
   nsPIDOMWindow* GetWindow() const {
     PC_AUTO_ENTER_API_CALL_NO_CHECK();
     return mWindow;
@@ -349,6 +345,13 @@ public:
       rv.Throw(r);
     }
   }
+
+#if !defined(MOZILLA_EXTERNAL_LINKAGE)
+  void SetCertificate(mozilla::dom::RTCCertificate& aCertificate);
+  const nsRefPtr<mozilla::dom::RTCCertificate>& Certificate() const;
+#endif
+  // This is a hack to support external linkage.
+  TemporaryRef<DtlsIdentity> Identity() const;
 
   NS_IMETHODIMP_TO_ERRORRESULT(CreateOffer, ErrorResult &rv,
                                const RTCOfferOptions& aOptions)
@@ -617,7 +620,7 @@ private:
                            const RTCConfiguration* aRTCConfiguration,
                            nsISupports* aThread);
   nsresult CalculateFingerprint(const std::string& algorithm,
-                                std::vector<uint8_t>& fingerprint) const;
+                                std::vector<uint8_t>* fingerprint) const;
   nsresult ConfigureJsepSessionCodecs();
 
   NS_IMETHODIMP EnsureDataConnection(uint16_t aNumstreams);
@@ -642,8 +645,6 @@ private:
   }
 
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
-  void virtualDestroyNSSReference() final;
-  void destructorSafeDestroyNSSReference();
   nsresult GetTimeSinceEpoch(DOMHighResTimeStamp *result);
 #endif
 
@@ -710,11 +711,14 @@ private:
   std::string mRemoteFingerprint;
 
   // identity-related fields
-  mozilla::RefPtr<DtlsIdentity> mIdentity;
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   // The entity on the other end of the peer-to-peer connection;
   // void if they are not yet identified, and no identity setting has been set
   nsAutoPtr<PeerIdentity> mPeerIdentity;
+  // The certificate we are using.
+  nsRefPtr<mozilla::dom::RTCCertificate> mCertificate;
+#else
+  mozilla::RefPtr<DtlsIdentity> mIdentity;
 #endif
   // Whether an app should be prevented from accessing media produced by the PC
   // If this is true, then media will not be sent until mPeerIdentity matches
