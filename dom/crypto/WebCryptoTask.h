@@ -205,6 +205,28 @@ protected:
   virtual void CallCallback(nsresult rv) override final;
 };
 
+class GenerateAsymmetricKeyTask : public WebCryptoTask
+{
+public:
+  GenerateAsymmetricKeyTask(JSContext* aCx,
+                            const ObjectOrString& aAlgorithm, bool aExtractable,
+                            const Sequence<nsString>& aKeyUsages);
+protected:
+  ScopedPLArenaPool mArena;
+  CryptoKeyPair mKeyPair;
+  nsString mAlgName;
+  CK_MECHANISM_TYPE mMechanism;
+  PK11RSAGenParams mRsaParams;
+  SECKEYDHParams mDhParams;
+  ScopedSECKEYPublicKey mPublicKey;
+  ScopedSECKEYPrivateKey mPrivateKey;
+  nsString mNamedCurve;
+
+  virtual void ReleaseNSSResources() override;
+  virtual nsresult DoCrypto() override;
+  virtual void Resolve() override;
+};
+
 } // namespace dom
 } // namespace mozilla
 
