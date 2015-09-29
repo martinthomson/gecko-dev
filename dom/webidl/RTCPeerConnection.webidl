@@ -101,8 +101,8 @@ interface mozRTCPeerConnection : EventTarget  {
   readonly attribute mozRTCSessionDescription? localDescription;
   readonly attribute mozRTCSessionDescription? remoteDescription;
   readonly attribute RTCSignalingState signalingState;
-  void updateIce (optional RTCConfiguration configuration);
   Promise<void> addIceCandidate (mozRTCIceCandidate candidate);
+  readonly attribute boolean? canTrickleIceCandidates;
   readonly attribute RTCIceGatheringState iceGatheringState;
   readonly attribute RTCIceConnectionState iceConnectionState;
   [Pref="media.peerconnection.identity.enabled"]
